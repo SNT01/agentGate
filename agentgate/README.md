@@ -328,3 +328,38 @@ Before a large deployment, plan for:
 - **Availability.** The broker is on the critical path for pushes: run at
   least two instances behind a load balancer, and keep a documented
   break-glass procedure.
+
+---
+
+## 11. Contributing
+
+AgentGate is **actively and continuously improved**, and contributions are
+welcome — bug reports, questions that expose confusing behaviour,
+documentation fixes, and pull requests alike.
+
+- **Bug or unexpected behaviour?**
+  [Open an issue](https://github.com/SNT01/agentGate/issues/new/choose).
+- **Idea or missing capability?**
+  [Open a feature request](https://github.com/SNT01/agentGate/issues/new/choose).
+  For anything substantial, please start there before writing code.
+- **Want to contribute a change?** Pull requests are welcome; small and
+  focused ones move fastest.
+- **Security vulnerability?** Report it **privately** via
+  [Security Advisories](https://github.com/SNT01/agentGate/security/advisories/new),
+  never as a public issue — see [SECURITY.md](../SECURITY.md).
+
+Read [CONTRIBUTING.md](../CONTRIBUTING.md) first: it covers setup (nothing to
+install), the checks a pull request must pass, and the design invariants
+every change is reviewed against — chiefly that authority may only narrow,
+and that new failure paths must fail closed.
+
+Participation is governed by our [Code of Conduct](../CODE_OF_CONDUCT.md).
+
+## 12. License
+
+Licensed under the [Apache License 2.0](../LICENSE). Copyright 2026
+Sachchida Nand Tiwari.
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.

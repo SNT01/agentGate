@@ -40,3 +40,57 @@ flows sponsor → agent card → repo policy → issued token, and no code path
 can widen it.
 
 Runs on plain Node.js ≥ 18 with no runtime dependencies.
+
+## Contributing
+
+AgentGate is **actively and continuously improved**, and contributions are
+welcome. If something is broken, confusing, or missing, we would rather hear
+about it than not:
+
+- **Found a bug, or something behaves unexpectedly?**
+  [Open an issue](https://github.com/SNT01/agentGate/issues/new/choose).
+- **Have an idea, or need a capability that doesn't exist yet?**
+  [Open a feature request](https://github.com/SNT01/agentGate/issues/new/choose) —
+  for anything substantial, please start there before writing code so we can
+  agree on the approach.
+- **Want to fix or improve something?** Pull requests are welcome. Small,
+  focused ones get merged fastest.
+- **Found a security vulnerability?** Please report it **privately** via
+  [Security Advisories](https://github.com/SNT01/agentGate/security/advisories/new),
+  not as a public issue. See [SECURITY.md](./SECURITY.md).
+
+Start with [CONTRIBUTING.md](./CONTRIBUTING.md) — it covers the setup (there
+is nothing to install), what reviewers look for, and the design invariants
+that changes are checked against. Participation is governed by our
+[Code of Conduct](./CODE_OF_CONDUCT.md).
+
+## Roadmap
+
+Known gaps, tracked openly and open to contribution:
+
+- **Admin dashboard** — not yet built; the `/audit` API it would sit on is
+  ready and authenticated.
+- **Live GitHub App wiring** — the enforcer logic is complete and tested,
+  but connecting it to a real repository still requires registering an App.
+- **Multi-instance deployment** — state is JSON files today; Postgres and
+  Redis backends are single-file swaps by design.
+
+## License
+
+Licensed under the [Apache License 2.0](./LICENSE).
+
+```
+Copyright 2026 Sachchida Nand Tiwari
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```

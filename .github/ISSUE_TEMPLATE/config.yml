@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/SNT01/agentGate/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
+  - name: Question or discussion
+    url: https://github.com/SNT01/agentGate/issues/new
+    about: Open a regular issue — questions that expose confusing behaviour are useful feedback.

@@ -29,5 +29,13 @@
     "least-privilege",
     "audit"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SNT01/agentGate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SNT01/agentGate/issues"
+  },
+  "homepage": "https://github.com/SNT01/agentGate#readme"
 }

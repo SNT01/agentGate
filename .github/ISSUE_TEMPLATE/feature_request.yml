@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest a capability or improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        AgentGate is improved continuously and proposals are welcome. For
+        anything substantial, opening this issue first — before writing code —
+        means we can agree on the approach and save you rework.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that is hard or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to see
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including any workaround you are using now.
+
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Design invariants
+      description: >
+        AgentGate decides who may change code in a repository, so a few
+        properties are non-negotiable. Please confirm your proposal is
+        compatible with them, or explain in the box above why it needs to
+        differ.
+      options:
+        - label: It does not introduce a way to widen a capability set (authority may only narrow)
+        - label: It fails closed on error, unknown input, or missing configuration
+        - label: It does not require a new runtime dependency, or the issue explains why one is needed
+
+  - type: dropdown
+    id: contributing
+    attributes:
+      label: Would you be willing to work on this?
+      options:
+        - "Yes, with guidance"
+        - "Yes, I can take it on"
+        - "No, but I would like to see it"
+    validations:
+      required: true
