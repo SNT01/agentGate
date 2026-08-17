@@ -1,0 +1,11 @@
+# Runtime state — contains the registry root key and the broker signing key.
+data/
+data-demo/
+
+# Local configuration and secrets
+.env
+*.pem
+*.key
+
+node_modules/
+*.log

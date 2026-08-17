@@ -1,0 +1,32 @@
+{
+  "name": "agentgate",
+  "version": "1.0.0",
+  "description": "Identity gate for repositories and the AI agents that act on them. Verified humans and capability-bounded agent identities, short-lived scoped credentials, and a tamper-evident audit trail.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "agentgate": "./src/cli/cli.js"
+  },
+  "main": "./src/index.js",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/",
+    "demo": "node demo/run-demo.js",
+    "broker": "node src/broker/server.js",
+    "start": "node src/broker/server.js"
+  },
+  "keywords": [
+    "github",
+    "security",
+    "ai-agents",
+    "identity",
+    "least-privilege",
+    "audit"
+  ],
+  "license": "MIT"
+}
