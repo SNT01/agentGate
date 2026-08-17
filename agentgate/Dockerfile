@@ -1,13 +1,26 @@
-# AgentGate token broker.
-# The core service has no runtime dependencies, so this image is just Node
-# plus the source — small, fast to build, and nothing to audit but our own code.
-FROM node:20-alpine
+# AgentGate token broker + optional admin dashboard.
+#
+# The broker itself has zero runtime dependencies — the final stage below
+# is just Node plus the source, small, fast to build, and nothing to audit
+# but our own code. The dashboard (agentgate/ui) is a React/Vite project
+# with build-time-only dependencies; it is compiled in an isolated stage so
+# its node_modules never reaches the runtime image.
 
+FROM node:20-alpine AS ui-build
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json* ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
+# Output lands at /src/ui/dist per ui/vite.config.js's outDir; copied below.
+
+FROM node:20-alpine
 WORKDIR /app
 
-# Copy only what the service needs at runtime.
+# Copy only what the broker needs at runtime.
 COPY package.json ./
 COPY src ./src
+COPY --from=ui-build /src/ui/dist ./src/ui/dist
 
 # Run as a non-root user. The data directory holds the organisation's root
 # signing key, so it is owned by that user and nothing else can read it.

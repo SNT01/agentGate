@@ -69,6 +69,24 @@ const config = {
     return str('AGENTGATE_ADMIN_TOKEN');
   },
 
+  /**
+   * Whether to serve the dashboard's static assets at all. Defaults to
+   * "on only when an admin token is configured" — the dashboard's API calls
+   * are useless without one, and serving the shell with no way to sign in
+   * is a confusing dead end, not a safe default. Set explicitly to
+   * override either way.
+   */
+  get uiEnabled() {
+    const raw = str('AGENTGATE_UI_ENABLED');
+    if (raw === null) return !!config.adminToken;
+    return raw === '1' || raw.toLowerCase() === 'true';
+  },
+
+  /** Where the built dashboard (ui/dist output) is expected to live. */
+  get uiAssetRoot() {
+    return str('AGENTGATE_UI_ASSET_ROOT') || path.join(__dirname, '..', 'ui', 'dist');
+  },
+
   /** 'debug' | 'info' | 'warn' | 'error' */
   get logLevel() {
     return str('AGENTGATE_LOG_LEVEL', 'info');

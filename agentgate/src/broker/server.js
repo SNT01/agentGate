@@ -4,10 +4,16 @@
  * `http`), so it runs with no install step.
  *
  * Endpoints:
- *   GET  /health         — liveness + broker public key (unauthenticated)
- *   POST /token          — request a scoped, short-lived token
- *   GET  /audit          — full audit log            (admin token required)
- *   GET  /audit/verify   — chain integrity check     (admin token required)
+ *   GET  /health              — liveness + broker public key (unauthenticated)
+ *   POST /token               — request a scoped, short-lived token
+ *   GET  /audit                — full audit log            (admin token required)
+ *   GET  /audit/verify         — chain integrity check     (admin token required)
+ *   GET  /admin/identities     — humans + agent cards      (admin token required)
+ *   GET  /admin/sessions       — live sessions, redacted   (admin token required)
+ *   POST /admin/revoke         — revoke an identity        (admin token required)
+ *   GET  /ui, /ui/*            — dashboard static assets   (unauthenticated;
+ *                                the assets hold no secrets — every API call
+ *                                the dashboard makes is itself gated above)
  *
  * Production notes:
  *  - Terminate TLS in front of this (reverse proxy or `https.createServer`).
@@ -20,6 +26,8 @@
 const http = require('http');
 const crypto = require('crypto');
 const { TokenBroker } = require('./broker');
+const { listIdentities, listSessions, revokeIdentity } = require('./adminApi');
+const { serveUi } = require('./staticFiles');
 const { config } = require('../shared/config');
 const log = require('../shared/logger');
 
@@ -57,6 +65,14 @@ function readBody(req, limit) {
   });
 }
 
+const ADMIN_ROUTES = new Set([
+  'GET /audit',
+  'GET /audit/verify',
+  'GET /admin/identities',
+  'GET /admin/sessions',
+  'POST /admin/revoke',
+]);
+
 function createServer(broker = new TokenBroker()) {
   const server = http.createServer(async (req, res) => {
     const send = (code, obj) => {
@@ -68,6 +84,25 @@ function createServer(broker = new TokenBroker()) {
         'X-Content-Type-Options': 'nosniff',
       });
       res.end(payload);
+    };
+
+    const sendRaw = (code, contentType, body) => {
+      res.writeHead(code, {
+        'Content-Type': contentType,
+        'Content-Length': Buffer.byteLength(body),
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      res.end(body);
+    };
+
+    const sendUnauthorized = (route) => {
+      log.warn('unauthorized admin request', { route, ip: req.socket.remoteAddress });
+      return send(401, {
+        error: config.adminToken
+          ? 'unauthorized — send Authorization: Bearer <AGENTGATE_ADMIN_TOKEN>'
+          : 'admin endpoints are disabled — set AGENTGATE_ADMIN_TOKEN to enable them',
+      });
     };
 
     try {
@@ -90,20 +125,44 @@ function createServer(broker = new TokenBroker()) {
         return send(result.granted ? 200 : 403, result);
       }
 
-      if (route === 'GET /audit' || route === 'GET /audit/verify') {
-        if (!isAuthorizedAdmin(req)) {
-          log.warn('unauthorized admin request', { route, ip: req.socket.remoteAddress });
-          return send(401, {
-            error: config.adminToken
-              ? 'unauthorized — send Authorization: Bearer <AGENTGATE_ADMIN_TOKEN>'
-              : 'admin endpoints are disabled — set AGENTGATE_ADMIN_TOKEN to enable them',
-          });
-        }
+      // Static dashboard assets. Unauthenticated by design: the built assets
+      // hold no secrets, and every API call the dashboard makes is gated by
+      // the admin checks below. A browser cannot attach a bearer header to
+      // the initial document request, so gating this route would just make
+      // the dashboard unable to load its own sign-in screen.
+      if (req.method === 'GET' && (url.pathname === '/ui' || url.pathname.startsWith('/ui/'))) {
+        if (!config.uiEnabled) return send(404, { error: 'not found' });
+        const { status, contentType, body } = serveUi(config.uiAssetRoot, url.pathname);
+        return sendRaw(status, contentType, body);
+      }
+
+      if (ADMIN_ROUTES.has(route)) {
+        if (!isAuthorizedAdmin(req)) return sendUnauthorized(route);
+
         if (route === 'GET /audit') {
           const limit = Number(url.searchParams.get('limit')) || 0;
           return send(200, { entries: limit > 0 ? broker.audit.recent(limit) : broker.audit.all() });
         }
-        return send(200, broker.audit.verifyChain(broker.publicKey));
+        if (route === 'GET /audit/verify') {
+          return send(200, broker.audit.verifyChain(broker.publicKey));
+        }
+        if (route === 'GET /admin/identities') {
+          return send(200, listIdentities(broker.registry));
+        }
+        if (route === 'GET /admin/sessions') {
+          return send(200, listSessions(broker));
+        }
+        if (route === 'POST /admin/revoke') {
+          const raw = await readBody(req, config.maxBodyBytes);
+          let body;
+          try {
+            body = raw ? JSON.parse(raw) : {};
+          } catch (_e) {
+            return send(400, { error: 'invalid JSON body' });
+          }
+          const result = revokeIdentity(broker.registry, broker, body);
+          return send(200, result);
+        }
       }
 
       return send(404, { error: 'not found' });
@@ -144,6 +203,7 @@ function start() {
       env: config.env,
       tokenTtlMs: config.tokenTtlMs,
       adminEndpoints: config.adminToken ? 'enabled' : 'disabled (AGENTGATE_ADMIN_TOKEN unset)',
+      dashboard: config.uiEnabled ? `enabled at /ui (assets: ${config.uiAssetRoot})` : 'disabled',
     });
   });
 

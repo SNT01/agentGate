@@ -15,7 +15,7 @@ that cannot be quietly edited.
 ```bash
 cd agentgate
 npm run demo       # narrated end-to-end walkthrough — no install needed
-npm test           # 80 tests
+npm test           # 96 tests
 npm run e2e:docker # deploy to local Docker and test the running service
 ```
 
@@ -34,12 +34,16 @@ npm run e2e:docker # deploy to local Docker and test the running service
 | **Verifies every commit** | A required status check gates the merge |
 | **Keeps approval human** | Agent approvals are dismissed automatically |
 | **Records everything** | Hash-chained, signed audit log |
+| **Admin dashboard** | Chain integrity, audit trail, identities, and revocation in a browser |
 
 The rule underneath all of it: **authority can only ever narrow.** Scope
 flows sponsor → agent card → repo policy → issued token, and no code path
 can widen it.
 
-Runs on plain Node.js ≥ 18 with no runtime dependencies.
+The broker runs on plain Node.js ≥ 18 with no runtime dependencies. The
+dashboard is an optional React app with build-time-only dependencies that
+compiles to static files the broker serves — the broker has nothing
+installed at runtime either way.
 
 ## Contributing
 
@@ -68,12 +72,13 @@ that changes are checked against. Participation is governed by our
 
 Known gaps, tracked openly and open to contribution:
 
-- **Admin dashboard** — not yet built; the `/audit` API it would sit on is
-  ready and authenticated.
 - **Live GitHub App wiring** — the enforcer logic is complete and tested,
   but connecting it to a real repository still requires registering an App.
 - **Multi-instance deployment** — state is JSON files today; Postgres and
   Redis backends are single-file swaps by design.
+- **Dashboard scope** — the admin dashboard covers read-only views plus
+  revocation; enrollment and agent-card issuance remain CLI-only by design
+  (a stolen dashboard session should never be able to grant authority).
 
 ## License
 

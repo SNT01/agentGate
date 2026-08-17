@@ -6,11 +6,14 @@ Verified humans and capability-bounded agent identities, short-lived scoped
 credentials instead of long-lived tokens, and an audit trail that cannot be
 quietly edited.
 
-Runs on plain Node.js ≥ 18 with **no dependencies to install** — the whole
-service uses the standard library.
+The broker itself runs on plain Node.js ≥ 18 with **no runtime
+dependencies** — it uses only the standard library. The optional admin
+dashboard (`ui/`) is a small React app with build-time-only dependencies;
+it compiles to static files the broker serves, and the broker still has
+nothing installed at runtime.
 
 ```bash
-npm test           # 80 tests
+npm test           # 96 tests
 npm run demo       # narrated end-to-end walkthrough
 npm run e2e:docker # deploy to local Docker and test the running service
 ```
@@ -143,9 +146,45 @@ curl http://127.0.0.1:4790/health
 | `POST /token` | signed request | Request a scoped, short-lived credential |
 | `GET /audit` | admin bearer | Full audit log (`?limit=N` for the tail) |
 | `GET /audit/verify` | admin bearer | Chain integrity check |
+| `GET /admin/identities` | admin bearer | Enrolled humans and agent cards, with revocation state |
+| `GET /admin/sessions` | admin bearer | Live sessions (credential material stripped) |
+| `POST /admin/revoke` | admin bearer | Revoke a human or agent card |
+| `GET /ui`, `GET /ui/*` | none | Dashboard static assets — see [§5a](#5a-admin-dashboard) |
 
 Admin endpoints require `Authorization: Bearer $AGENTGATE_ADMIN_TOKEN` and
-are **disabled entirely** when that variable is unset.
+are **disabled entirely** when that variable is unset. The static assets
+under `/ui` are unauthenticated by design — they hold no secrets, and a
+browser cannot attach a bearer header to its first document request — but
+every API call the dashboard makes is gated exactly like the table above.
+
+### 5a. Admin dashboard
+
+A small React dashboard for the four `/admin` and `/audit` endpoints:
+chain-integrity status, the audit trail with filters, enrolled identities
+with a one-click revoke (which can only remove authority, never grant it),
+and live sessions. It is optional and off by default in development;
+building it and enabling it:
+
+```bash
+cd ui && npm ci && npm run build   # emits static assets to ../src/ui/dist
+cd ..
+AGENTGATE_UI_ENABLED=1 npm run broker
+open http://127.0.0.1:4790/ui
+```
+
+Sign-in is the existing `AGENTGATE_ADMIN_TOKEN` — there is no separate
+dashboard login. The token is kept in the browser tab's memory only, never
+in `localStorage`, so closing the tab ends the session and an XSS cannot
+read it out of storage.
+
+`AGENTGATE_UI_ENABLED` defaults to on whenever `AGENTGATE_ADMIN_TOKEN` is
+set (off otherwise, since the dashboard has nothing useful to show without
+one) — set it explicitly to override either way.
+`AGENTGATE_UI_ASSET_ROOT` overrides where the broker looks for the built
+files, if you serve them from somewhere other than `src/ui/dist`. In the
+provided Dockerfile, the dashboard is built in an isolated stage and only
+its static output — not `ui/node_modules` — is copied into the runtime
+image (§10).
 
 ### Make it invisible: the git credential helper
 
@@ -292,7 +331,8 @@ GitHub ◄── Enforcer (GitHub App)
 | `src/enforcer/` | Commit verification, review gate, GitHub App wiring |
 | `src/shared/` | Crypto, capability algebra, audit chain, storage, config, logging |
 | `src/cli/` | `agentgate` CLI and the git credential helper |
-| `test/` | 80 tests across all of the above |
+| `ui/` | Admin dashboard (React/Vite, build-time deps only) — builds to `src/ui/dist`, served by the broker at `/ui` |
+| `test/` | 96 tests across all of the above |
 
 ---
 

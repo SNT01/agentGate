@@ -22,7 +22,7 @@ scoped instead of long-lived and total. Every commit is verified before it
 can merge, agent approvals never count, and every decision is recorded in a
 log that cannot be quietly edited.
 
-**Status:** implemented and tested — 80 tests, a narrated end-to-end demo,
+**Status:** implemented and tested — 96 tests, a narrated end-to-end demo,
 no runtime dependencies. See [`agentgate/README.md`](./agentgate/README.md).
 
 ---
@@ -222,7 +222,7 @@ protocol. It should be paired with mandatory review and CI scanning.
 
 ## 6. Implementation
 
-Complete and tested in [`agentgate/`](./agentgate/): 80 tests, a narrated
+Complete and tested in [`agentgate/`](./agentgate/): 96 tests, a narrated
 end-to-end demo, and **no runtime dependencies** — the service runs on
 Node's standard library, so there is nothing to audit but the project's own
 code.
@@ -249,7 +249,7 @@ startup validation that refuses to boot an unsafe production configuration.
 | Git credential helper | nobody directly | automatically, on every push |
 | Broker service | nobody directly | continuously |
 | GitHub PR interface | everyone | the everyday surface — check results and dismissal comments appear where work already happens |
-| Admin dashboard | security admins | future addition for governance and attribution views |
+| Admin dashboard | security admins | chain integrity, audit trail, identities, and revocation, at `/ui` |
 
 No end-developer-facing UI is required. If a regular developer has to open
 an AgentGate screen to ship code, the design has failed.
@@ -267,9 +267,9 @@ enrollment.
 credential helper, retire personal access tokens for that repository.
 Immediate value: no long-lived credentials, context-gated access.
 
-**Phase 3 — Fleet governance.** Roll out across repositories, add the admin
-dashboard, join audit sessions to LLM token usage for per-agent cost
-attribution.
+**Phase 3 — Fleet governance.** Roll out across repositories, use the admin
+dashboard for chain verification, identity oversight, and revocation, and
+join audit sessions to LLM token usage for per-agent cost attribution.
 
 Each phase is independently useful, which matters: adoption stalls when the
 first increment requires the whole system.
