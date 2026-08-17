@@ -123,7 +123,16 @@ function createServer(broker = new TokenBroker()) {
 
 function start() {
   const { assertProductionSafe } = require('../shared/config');
-  if (config.isProduction) assertProductionSafe();
+  if (config.isProduction) {
+    try {
+      assertProductionSafe();
+    } catch (err) {
+      // An operator reading container logs needs the problem, not a stack
+      // trace through Node's module loader.
+      process.stderr.write(`\n${err.message}\n\nRefusing to start.\n\n`);
+      process.exit(1);
+    }
+  }
 
   const broker = new TokenBroker();
   const server = createServer(broker);

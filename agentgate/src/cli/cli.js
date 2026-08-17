@@ -11,9 +11,15 @@ const { config } = require('../shared/config');
 const USAGE = `agentgate — identity gate for repositories and the AI agents that act on them
 
 Setup
+  agentgate keygen
+      Generate a keypair locally. Keep the private key; hand the public key
+      to an administrator to enroll with. Required in production, where the
+      server refuses to generate keys on your behalf.
+
   agentgate enroll --name "Alice" [--contexts office,ci] [--admin]
-      Enroll a human identity. Prints an id and (in development) a private
-      key to store in your keychain.
+                   [--public-key <base64>]
+      Enroll a human identity. Without --public-key (development only) a
+      keypair is generated and the private key printed once.
 
   agentgate issue-agent --sponsor <humanId> --tool claude-code [--version 2.4.0]
                         [--context office] [--branches "feature/*,agent/*"]
@@ -58,6 +64,21 @@ function list(value, fallback) {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function cmdKeygen(flags) {
+  const { generateKeyPair } = require('../shared/crypto');
+  const { publicKey, privateKey } = generateKeyPair();
+
+  if (flags.json) {
+    console.log(JSON.stringify({ publicKey, privateKey }, null, 2));
+    return;
+  }
+  console.log('Keypair generated. The private key is shown once and is not stored anywhere.\n');
+  console.log(`  public key:  ${publicKey}`);
+  console.log(`  private key: ${privateKey}`);
+  console.log('\n  Store the private key in your OS keychain, then ask an administrator to run:');
+  console.log(`    agentgate enroll --name "Your Name" --public-key "${publicKey}"`);
 }
 
 function cmdEnroll(registry, flags) {
@@ -192,6 +213,10 @@ function main() {
     console.log(USAGE);
     return;
   }
+
+  // keygen is purely local: it must work without touching the registry,
+  // so a developer can generate a key before they have any access at all.
+  if (cmd === 'keygen') return cmdKeygen(flags);
 
   const registry = new Registry();
 

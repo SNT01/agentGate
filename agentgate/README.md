@@ -10,8 +10,9 @@ Runs on plain Node.js ≥ 18 with **no dependencies to install** — the whole
 service uses the standard library.
 
 ```bash
-npm test    # 74 tests
-npm run demo   # narrated end-to-end walkthrough
+npm test           # 80 tests
+npm run demo       # narrated end-to-end walkthrough
+npm run e2e:docker # deploy to local Docker and test the running service
 ```
 
 ---
@@ -197,11 +198,49 @@ to boot otherwise:
 - Binding to `0.0.0.0` requires `AGENTGATE_ALLOW_PUBLIC_BIND=1` as explicit
   confirmation that TLS is terminated in front.
 
+### Docker
+
 ```bash
 docker build -t agentgate .
-docker run -p 4790:4790 -v agentgate-data:/data \
+docker run -d --name agentgate -p 4790:4790 -v agentgate-data:/data \
   -e AGENTGATE_ADMIN_TOKEN="$(openssl rand -hex 32)" agentgate
+
+curl http://127.0.0.1:4790/health
 ```
+
+The image runs as a non-root user, stores state mode `0600` on a mounted
+volume, and ships a healthcheck. Without a valid configuration it refuses to
+start rather than coming up in a weakened state.
+
+To deploy and verify the whole thing in one command:
+
+```bash
+npm run e2e:docker
+```
+
+That builds the image, confirms it refuses an unsafe configuration, starts
+the broker, enrolls a human and an agent through the **production** path
+(keys generated client-side, only public keys registered), runs 25 checks
+against the live HTTP service, then restarts the container and confirms the
+identities and audit chain survived.
+
+### Enrolling in production
+
+Production mode refuses to generate keypairs server-side, so the private key
+never leaves the machine that will use it:
+
+```bash
+# On the developer's machine
+agentgate keygen
+#   public key:  MCowBQYDK2Vw...
+#   private key: MC4CAQAwBQYD...   <- store in your OS keychain
+
+# An administrator, against the broker
+agentgate enroll --name "Alice" --contexts office --public-key "MCowBQYDK2Vw..."
+```
+
+Agent identity cards follow the same rule — generate the agent's keypair
+where the agent runs, register only the public half.
 
 ---
 
@@ -253,7 +292,7 @@ GitHub ◄── Enforcer (GitHub App)
 | `src/enforcer/` | Commit verification, review gate, GitHub App wiring |
 | `src/shared/` | Crypto, capability algebra, audit chain, storage, config, logging |
 | `src/cli/` | `agentgate` CLI and the git credential helper |
-| `test/` | 74 tests across all of the above |
+| `test/` | 80 tests across all of the above |
 
 ---
 

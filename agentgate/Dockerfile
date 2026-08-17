@@ -15,9 +15,14 @@ RUN addgroup -S agentgate && adduser -S agentgate -G agentgate \
     && mkdir -p /data && chown -R agentgate:agentgate /data /app
 USER agentgate
 
+# Binding to all interfaces is required inside a container — the published
+# port, not the bind address, is the real network boundary here — so the
+# public-bind confirmation is set deliberately. Terminating TLS in front of
+# this container remains the operator's responsibility.
 ENV NODE_ENV=production \
     AGENTGATE_DATA_DIR=/data \
     AGENTGATE_BROKER_HOST=0.0.0.0 \
+    AGENTGATE_ALLOW_PUBLIC_BIND=1 \
     AGENTGATE_BROKER_PORT=4790
 
 # Mount a volume here — losing it means losing the registry root key.

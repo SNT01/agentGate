@@ -14,8 +14,9 @@ that cannot be quietly edited.
 
 ```bash
 cd agentgate
-npm run demo     # narrated end-to-end walkthrough — no install needed
-npm test         # 74 tests
+npm run demo       # narrated end-to-end walkthrough — no install needed
+npm test           # 80 tests
+npm run e2e:docker # deploy to local Docker and test the running service
 ```
 
 - **[agentgate/README.md](./agentgate/README.md)** — how to install, use the
