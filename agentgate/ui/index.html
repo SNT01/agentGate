@@ -4,7 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
     <title>AgentGate — Admin</title>
+
+    <!-- Inline SVG favicon: no extra request on a page an operator may be
+         loading mid-incident, and it inherits the same shield mark as the app. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23256abf'/%3E%3Cpath d='M12 19s5-2.6 5-6.4V7.6L12 5.7 7 7.6v5c0 3.8 5 6.4 5 6.4z' fill='none' stroke='white' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+
+    <script>
+      // Apply the saved theme before first paint. Without this, a viewer who
+      // chose light while their OS is dark sees a dark flash on every load —
+      // React cannot run early enough to prevent it.
+      try {
+        var t = localStorage.getItem('agentgate.theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {
+        /* storage unavailable — fall through to the OS preference */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

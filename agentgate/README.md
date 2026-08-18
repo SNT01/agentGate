@@ -175,7 +175,18 @@ open http://127.0.0.1:4790/ui
 Sign-in is the existing `AGENTGATE_ADMIN_TOKEN` — there is no separate
 dashboard login. The token is kept in the browser tab's memory only, never
 in `localStorage`, so closing the tab ends the session and an XSS cannot
-read it out of storage.
+read it out of storage. The one thing the dashboard *does* persist is the
+light/dark preference, which is not a credential; it follows the operating
+system until you choose otherwise.
+
+On the design: colours are not chosen by eye. Status colours are a fixed
+set used only as a mark beside a written label — never as the sole signal —
+and every value that carries text was checked for contrast against the
+surface it renders on, in both themes. `ui/src/styles.css` records which
+values were adjusted and why. The practical consequence is that the
+dashboard stays readable for colour-blind operators and in high-contrast
+mode, which for the audit trail is the difference between "granted" and
+"denied" being legible or not.
 
 `AGENTGATE_UI_ENABLED` defaults to on whenever `AGENTGATE_ADMIN_TOKEN` is
 set (off otherwise, since the dashboard has nothing useful to show without

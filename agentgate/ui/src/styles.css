@@ -1,292 +1,1421 @@
+/*
+ * AgentGate dashboard — design tokens and components.
+ *
+ * Colour comes from a validated palette rather than taste. Every value that
+ * carries text was checked against the surface it actually renders on:
+ *
+ *   - Status colours (good/warning/serious/critical) are a FIXED set, never
+ *     themed. On the light surface two of them sit below 3:1, which is why a
+ *     status is never colour alone — every one ships as a mark plus a written
+ *     label. Text uses the darker `--status-*-ink` steps (all >= 5.7:1), and
+ *     the raw hues are reserved for the mark beside it.
+ *   - `--accent` is the button/mark fill (white label 5.39:1); `--accent-ink`
+ *     is the darker step used whenever accent has to be *read* as text
+ *     (6.46:1 light, 5.83:1 dark). They are deliberately not the same value.
+ *   - `--text-muted` was darkened from the reference's axis-label step: at
+ *     0.78rem uppercase, table headers are small text and need 4.5:1, which
+ *     that step (3.5:1) did not clear.
+ *
+ * Dark mode is a selected set of steps validated against the dark surface,
+ * not an inversion. It is declared under two scopes: the media query follows
+ * the OS, the [data-theme] attribute follows the in-app toggle, and the
+ * toggle wins both directions.
+ */
+
+/* ==========================================================================
+   1. Tokens
+   ========================================================================== */
+
 :root {
-  --bg: #0f1115;
-  --panel: #171a21;
-  --border: #262b36;
-  --text: #e6e8eb;
-  --muted: #8b92a3;
-  --accent: #4f8cff;
-  --ok: #2fb673;
-  --warn: #d9a441;
-  --danger: #e0525f;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light;
+
+  /* Surfaces — plane is the page, surface-1 is a raised card/table. */
+  --plane: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --surface-2: #f2f2ef;
+  --surface-raised: #ffffff;
+
+  /* Ink */
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #6f6d67;
+
+  /* Lines */
+  --border: #e1e0d9;
+  --border-strong: #c3c2b7;
+
+  /* Accent — fill and ink are different steps on purpose (see header). */
+  --accent: #256abf;
+  --accent-ink: #1c5cab;
+  --accent-wash: rgba(37, 106, 191, 0.09);
+  --accent-ring: rgba(37, 106, 191, 0.35);
+
+  /* Status marks — fixed, never themed, never used alone. */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+
+  /* Status ink — the readable steps, for text carrying the same meaning. */
+  --status-good-ink: #006300;
+  --status-warning-ink: #8a5a00;
+  --status-serious-ink: #a2422a;
+  --status-critical-ink: #b02020;
+
+  --status-good-wash: rgba(12, 163, 12, 0.10);
+  --status-warning-wash: rgba(250, 178, 25, 0.14);
+  --status-critical-wash: rgba(208, 59, 59, 0.10);
+
+  --danger-fill: #c22f2f;
+
+  /* Type — one sans throughout, including large figures. */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+  --text-hero: 3rem;
+
+  /* Space — a 4px scale, so nothing is eyeballed. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(11, 11, 11, 0.06);
+  --shadow-md: 0 4px 16px rgba(11, 11, 11, 0.10);
+  --shadow-lg: 0 16px 48px rgba(11, 11, 11, 0.18);
+
+  --sidebar-width: 232px;
+  --topbar-height: 56px;
 }
 
-* {
+/* Dark: the OS setting. Guarded so an explicit light stamp still wins. */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+
+    --plane: #0d0d0d;
+    --surface-1: #1a1a19;
+    --surface-2: #212120;
+    --surface-raised: #232322;
+
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #96948d;
+
+    --border: #2c2c2a;
+    --border-strong: #383835;
+
+    --accent: #256abf;
+    --accent-ink: #5598e7;
+    --accent-wash: rgba(85, 152, 231, 0.14);
+    --accent-ring: rgba(85, 152, 231, 0.45);
+
+    --status-good-ink: #0ca30c;
+    --status-warning-ink: #fab219;
+    --status-serious-ink: #ec835a;
+    --status-critical-ink: #f07070;
+
+    --status-good-wash: rgba(12, 163, 12, 0.16);
+    --status-warning-wash: rgba(250, 178, 25, 0.16);
+    --status-critical-wash: rgba(240, 112, 112, 0.14);
+
+    --danger-fill: #c22f2f;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* Dark: the in-app toggle. Same values; wins over the media query. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --plane: #0d0d0d;
+  --surface-1: #1a1a19;
+  --surface-2: #212120;
+  --surface-raised: #232322;
+
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #96948d;
+
+  --border: #2c2c2a;
+  --border-strong: #383835;
+
+  --accent: #256abf;
+  --accent-ink: #5598e7;
+  --accent-wash: rgba(85, 152, 231, 0.14);
+  --accent-ring: rgba(85, 152, 231, 0.45);
+
+  --status-good-ink: #0ca30c;
+  --status-warning-ink: #fab219;
+  --status-serious-ink: #ec835a;
+  --status-critical-ink: #f07070;
+
+  --status-good-wash: rgba(12, 163, 12, 0.16);
+  --status-warning-wash: rgba(250, 178, 25, 0.16);
+  --status-critical-wash: rgba(240, 112, 112, 0.14);
+
+  --danger-fill: #c22f2f;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+/* ==========================================================================
+   2. Base
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--plane);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+/* One visible focus treatment for everything, so keyboard users are never
+   lost. `:focus-visible` keeps it off mouse clicks. */
+:focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: var(--accent-wash);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--text-muted);
 }
-
+.secondary {
+  color: var(--text-secondary);
+}
 .mono {
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 0.85em;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-/* --- Sign-in gate --- */
+/* ==========================================================================
+   3. Controls
+   ========================================================================== */
+
+input,
+select,
+button,
+textarea {
+  font: inherit;
+  font-size: var(--text-base);
+}
+
+input[type='text'],
+input[type='password'],
+input:not([type]),
+select {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  min-height: 36px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input::placeholder {
+  color: var(--text-muted);
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+select {
+  appearance: none;
+  padding-right: var(--space-6);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.btn,
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background: var(--accent);
+  border: 1px solid transparent;
+  color: #ffffff;
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-4);
+  min-height: 36px;
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-ink);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Secondary — the default for anything that isn't the primary action. */
+button.ghost {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+button.ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+button.danger {
+  background: var(--danger-fill);
+}
+button.danger:hover:not(:disabled) {
+  background: var(--status-critical-ink);
+}
+
+button.subtle {
+  justify-content: flex-start;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  padding: var(--space-1) var(--space-2);
+  min-height: 28px;
+  font-weight: 500;
+}
+button.subtle:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+/* ==========================================================================
+   4. Sign-in gate
+   ========================================================================== */
+
 .signin {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  min-height: 100vh;
+  padding: var(--space-5);
+  /* A single wash behind the card so the gate reads as its own place,
+     not a dashboard that failed to load. */
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, var(--accent-wash), transparent 70%), var(--plane);
 }
+
 .signin-card {
-  background: var(--panel);
+  background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 32px;
-  width: 360px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-6);
+  width: 100%;
+  max-width: 400px;
 }
+
+.signin-card .mark {
+  margin-bottom: var(--space-4);
+}
+
 .signin-card h1 {
-  margin: 0 0 8px;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+  margin-bottom: var(--space-2);
 }
+
 .signin-card form {
   display: flex;
-  gap: 8px;
-  margin-top: 16px;
-}
-.signin-card input {
-  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
 }
 
-/* --- Layout --- */
+.signin-card input {
+  width: 100%;
+}
+
+.signin-card button[type='submit'] {
+  width: 100%;
+}
+
+.signin-hint {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   5. App shell
+   ========================================================================== */
+
 .app {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
   display: flex;
   flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  background: var(--surface-1);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  top: 0;
   height: 100vh;
 }
-.topbar {
+
+.brand {
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  gap: var(--space-3);
+  padding: var(--space-2);
 }
-.brand {
-  font-weight: 700;
-  letter-spacing: 0.02em;
+
+.brand-name {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-size: var(--text-md);
 }
-.topbar nav {
+
+.brand-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  display: block;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* The lock mark. Drawn in CSS rather than shipped as an asset — it is two
+   rounded rectangles, and an image would be a network request for it. */
+.mark {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+}
+.mark svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar nav {
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  gap: 2px;
   flex: 1;
 }
+
 .tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   background: transparent;
   border: none;
-  color: var(--muted);
-  padding: 8px 14px;
-  border-radius: 6px;
+  color: var(--text-secondary);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
   cursor: pointer;
-}
-.tab.active {
-  background: var(--border);
-  color: var(--text);
-}
-.signout {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--muted);
-}
-main {
-  flex: 1;
-  overflow: auto;
-  padding: 24px;
-}
-
-/* --- Form controls --- */
-input,
-select,
-button {
-  background: #0b0d11;
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 0.9rem;
-}
-button {
-  cursor: pointer;
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
-}
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-button.danger {
-  background: var(--danger);
-  border-color: var(--danger);
-}
-
-/* --- Overview --- */
-.chain-status {
-  padding: 16px 20px;
-  border-radius: 10px;
-  margin-bottom: 20px;
-}
-.chain-status.ok {
-  background: rgba(47, 182, 115, 0.12);
-  border: 1px solid var(--ok);
-}
-.chain-status.broken {
-  background: rgba(224, 82, 95, 0.15);
-  border: 2px solid var(--danger);
-  font-size: 1.05rem;
-}
-.stat-row {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-.stat {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px 20px;
-  min-width: 120px;
-}
-.stat-value {
-  font-size: 1.8rem;
-  font-weight: 700;
-}
-.stat-label {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-/* --- Tables --- */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-th,
-td {
+  font-weight: 500;
   text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.88rem;
-}
-th {
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-tr.clickable {
-  cursor: pointer;
-}
-tr.clickable:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-tr.outcome-denied td.reason {
-  color: var(--warn);
-}
-.expanded-detail pre {
-  margin: 0;
-  white-space: pre-wrap;
-  font-size: 0.8rem;
+  justify-content: flex-start;
+  min-height: 38px;
+  position: relative;
 }
 
-/* --- Badges & chips --- */
-.badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.75rem;
+.tab:hover:not(.active) {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+.tab.active {
+  background: var(--accent-wash);
+  color: var(--accent-ink);
   font-weight: 600;
 }
-.badge.active {
-  background: rgba(47, 182, 115, 0.15);
-  color: var(--ok);
+
+/* The active marker is a bar as well as a colour — so the current tab is
+   not signalled by colour alone. */
+.tab.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-ink);
 }
-.badge.revoked,
-.badge.expired {
-  background: rgba(224, 82, 95, 0.15);
-  color: var(--danger);
+
+.tab-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  opacity: 0.85;
 }
-.badge.unrestricted {
-  background: rgba(217, 164, 65, 0.15);
-  color: var(--warn);
+
+.tab-count {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
 }
-.chip-list {
+.tab.active .tab-count {
+  background: var(--surface-raised);
+  color: var(--accent-ink);
+}
+
+.sidebar-footer {
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.content {
+  min-width: 0; /* lets wide tables scroll instead of stretching the grid */
+  display: flex;
+  flex-direction: column;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
-.chip {
-  background: rgba(79, 140, 255, 0.15);
-  color: var(--accent);
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 0.78rem;
+
+.page-title {
+  font-size: var(--text-lg);
+  font-weight: 620;
+  letter-spacing: -0.01em;
 }
 
-/* --- Toolbar --- */
-.toolbar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 14px;
+.page-subtitle {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  margin-top: 2px;
 }
-.toolbar input {
+
+main {
   flex: 1;
+  padding: var(--space-5) var(--space-6) var(--space-7);
+  min-width: 0;
 }
 
-/* --- Modal --- */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+/* A live "as of" clock, so a stale dashboard is visibly stale. */
+.freshness {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
-.modal {
-  background: var(--panel);
+.pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-good);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ==========================================================================
+   6. Cards & sections
+   ========================================================================== */
+
+.card {
+  background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 24px;
-  width: 420px;
-}
-.modal input {
-  width: 100%;
-  margin: 12px 0;
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-.warn {
-  color: var(--warn);
-}
-.error {
-  color: var(--danger);
-}
-.error-panel {
-  padding: 16px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 section {
-  margin-bottom: 32px;
+  margin-bottom: var(--space-6);
 }
+section:last-child {
+  margin-bottom: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
 section h2 {
-  font-size: 1rem;
-  color: var(--muted);
-  margin-bottom: 10px;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.section-note {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   7. Status banner — the chain-integrity headline
+   ========================================================================== */
+
+.chain-status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  margin-bottom: var(--space-5);
+}
+
+.chain-status .status-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+}
+
+.chain-status-title {
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+
+.chain-status-body {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  margin-top: 2px;
+}
+
+.chain-status.ok {
+  border-color: rgba(12, 163, 12, 0.35);
+  background: var(--status-good-wash);
+}
+.chain-status.ok .status-icon {
+  color: var(--status-good-ink);
+}
+.chain-status.ok .chain-status-title {
+  color: var(--status-good-ink);
+}
+
+.chain-status.broken {
+  border: 2px solid var(--status-critical);
+  background: var(--status-critical-wash);
+  padding: var(--space-5);
+}
+.chain-status.broken .status-icon {
+  color: var(--status-critical-ink);
+  width: 26px;
+  height: 26px;
+}
+.chain-status.broken .chain-status-title {
+  color: var(--status-critical-ink);
+  font-size: var(--text-md);
+}
+
+/* ==========================================================================
+   8. Stat tiles
+   ========================================================================== */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.stat {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.stat-label {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 550;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Proportional figures: a standalone value at this size looks loose with
+   tabular-nums, which is reserved for columns that must align. */
+.stat-value {
+  font-size: var(--text-xl);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.stat-note {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* A count that means something bad is emphasised, but only alongside its
+   label and a mark — never by colour alone. */
+.stat.attention {
+  border-color: rgba(250, 178, 25, 0.45);
+  background: var(--status-warning-wash);
+}
+.stat.attention .stat-value {
+  color: var(--status-warning-ink);
+}
+.stat.attention .stat-label {
+  color: var(--status-warning-ink);
+}
+
+.stat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.stat-dot.good {
+  background: var(--status-good);
+}
+.stat-dot.warning {
+  background: var(--status-warning);
+}
+.stat-dot.neutral {
+  background: var(--border-strong);
+}
+
+/* ==========================================================================
+   9. Tables
+   ========================================================================== */
+
+.table-wrap {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-sm);
+}
+
+/* Reason text is the widest thing in any table and the first to be squeezed
+   into a one-character column. Giving it a floor makes the wrapper scroll
+   instead — the behaviour it was already styled for. */
+td.reason {
+  min-width: 240px;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  padding: var(--space-3);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+td.nowrap {
+  white-space: nowrap;
+}
+
+/* A revoked identity is still listed — it is history — but it should not
+   compete with the live ones. The badge carries the meaning; this is tone. */
+tbody tr.is-revoked td {
+  opacity: 0.6;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr.clickable {
+  cursor: pointer;
+}
+tbody tr.clickable:hover {
+  background: var(--surface-2);
+}
+tbody tr.is-expanded {
+  background: var(--accent-wash);
+}
+
+td.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Denials carry the reason in status ink — beside a badge that also says
+   "denied" in words, so the colour is reinforcement, not the message. */
+tr.outcome-denied td.reason {
+  color: var(--status-serious-ink);
+}
+
+.expanded-detail > td {
+  background: var(--surface-2);
+  padding: var(--space-4);
+}
+
+/* ==========================================================================
+   10. Badges, chips, IDs
+   ========================================================================== */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 7px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.badge.active,
+.badge.granted {
+  background: var(--status-good-wash);
+  color: var(--status-good-ink);
+  border-color: rgba(12, 163, 12, 0.28);
+}
+
+.badge.revoked,
+.badge.denied,
+.badge.expired {
+  background: var(--status-critical-wash);
+  color: var(--status-critical-ink);
+  border-color: rgba(208, 59, 59, 0.28);
+}
+
+.badge.unrestricted,
+.badge.warning {
+  background: var(--status-warning-wash);
+  color: var(--status-warning-ink);
+  border-color: rgba(250, 178, 25, 0.35);
+}
+
+.badge.neutral {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.chip-list {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 1px 7px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.chip.accent {
+  background: var(--accent-wash);
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+
+/* Registry ids are 24 characters of hex and would otherwise set the column
+   width for the whole table. Shown truncated, full value on hover, and one
+   click copies it. */
+.id {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  cursor: pointer;
+  max-width: 168px;
+}
+.id:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.id-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.id-copied {
+  color: var(--status-good-ink);
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   11. Meter — session lifetime remaining
+   ========================================================================== */
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 108px;
+}
+
+.meter-track {
+  display: block;
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  /* The unfilled track is a lighter step of the fill's own ramp, so the
+     bar reads as one object rather than a bar floating on the surface. */
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  overflow: hidden;
+  min-width: 44px;
+}
+
+/* display:block is load-bearing — these are <span>s, and width/height do
+   not apply to a non-replaced inline box, so the fill would never draw. */
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.meter-fill.warning {
+  background: var(--status-warning);
+}
+.meter-fill.critical {
+  background: var(--status-critical);
+}
+
+.meter-label {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   12. Toolbar
+   ========================================================================== */
+
+.toolbar {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.toolbar .search {
+  flex: 1;
+  min-width: 200px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.toolbar .search svg {
+  position: absolute;
+  left: 10px;
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.toolbar .search input {
+  width: 100%;
+  padding-left: 32px;
+}
+
+.segmented {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+  gap: 2px;
+}
+
+.segmented button {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-3);
+  min-height: 30px;
+  border-radius: 6px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.segmented button:hover:not(.active) {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+.segmented button.active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.result-count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+/* ==========================================================================
+   13. Empty, loading, error states
+   ========================================================================== */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-7) var(--space-5);
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.5;
+  margin-bottom: var(--space-1);
+}
+.empty-title {
+  color: var(--text-secondary);
+  font-weight: 550;
+}
+.empty-body {
+  font-size: var(--text-sm);
+  max-width: 42ch;
+}
+
+/* Skeletons hold the layout while data loads, so switching views does not
+   collapse the page and reflow it a moment later. */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-raised) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+  height: 12px;
+}
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.skeleton-stat {
+  height: 88px;
+  border-radius: var(--radius-lg);
+}
+.skeleton-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.error-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid rgba(208, 59, 59, 0.4);
+  background: var(--status-critical-wash);
+  border-radius: var(--radius-lg);
+}
+.error-panel .error-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+  color: var(--status-critical-ink);
+}
+.error-panel svg {
+  width: 18px;
+  height: 18px;
+}
+
+.error {
+  color: var(--status-critical-ink);
+  font-size: var(--text-sm);
+}
+.warn {
+  color: var(--status-warning-ink);
+}
+
+/* ==========================================================================
+   14. Modal
+   ========================================================================== */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 11, 11, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  z-index: 50;
+  animation: fade 0.12s ease;
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.modal {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-5);
+  width: 100%;
+  max-width: 460px;
+}
+
+.modal h3 {
+  font-size: var(--text-md);
+  font-weight: 620;
+  margin-bottom: var(--space-2);
+}
+
+.modal p {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-3);
+}
+
+.modal input {
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+
+.modal-callout {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--status-warning-wash);
+  border: 1px solid rgba(250, 178, 25, 0.4);
+  color: var(--status-warning-ink);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+}
+.modal-callout svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  margin-top: 1px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* ==========================================================================
+   15. Detail grid (expanded audit entry)
+   ========================================================================== */
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-3);
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.detail-key {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.detail-value {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+details.raw-json summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding: var(--space-1) 0;
+  user-select: none;
+}
+details.raw-json summary:hover {
+  color: var(--accent-ink);
+}
+details.raw-json pre {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  background: var(--plane);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ==========================================================================
+   16. Responsive
+   ========================================================================== */
+
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+
+  /* The sidebar becomes a horizontal bar: same markup, same roles, so the
+     tablist semantics and keyboard behaviour do not change with width. */
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: auto;
+    z-index: 20;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .brand-sub {
+    display: none;
+  }
+  .sidebar nav {
+    flex-direction: row;
+    flex: 1;
+    gap: var(--space-1);
+  }
+  .tab {
+    min-height: 34px;
+  }
+  .tab.active::before {
+    top: auto;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 18px;
+    height: 3px;
+  }
+  .tab-label {
+    display: none;
+  }
+  .tab-count {
+    display: none;
+  }
+  .sidebar-footer {
+    flex-direction: row;
+    border-top: none;
+    padding-top: 0;
+    border-left: 1px solid var(--border);
+    padding-left: var(--space-3);
+  }
+  .page-header,
+  main {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+  .table-wrap {
+    max-height: none;
+  }
+  /* Below this width the table is wider than the screen by design: an audit
+     row has seven meaningful columns and dropping any of them would be
+     worse than a horizontal scroll. */
+  .table-wrap table {
+    min-width: 720px;
+  }
+}
+
+@media (max-width: 600px) {
+  :root {
+    --text-hero: 2.25rem;
+    --text-xl: 1.5rem;
+  }
+  .stat-row {
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  }
+  .result-count {
+    margin-left: 0;
+  }
+}
+
+/* Windows high-contrast: never rely on our washes there. */
+@media (forced-colors: active) {
+  .badge,
+  .chip,
+  .card,
+  .stat,
+  .chain-status,
+  .table-wrap {
+    border: 1px solid CanvasText;
+  }
+  .tab.active::before,
+  .meter-fill {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
 }
