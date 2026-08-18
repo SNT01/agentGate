@@ -15,7 +15,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "demo": "node demo/run-demo.js",
     "e2e:docker": "./scripts/e2e-docker.sh",
     "broker": "node src/broker/server.js",

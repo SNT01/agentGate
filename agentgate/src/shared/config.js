@@ -11,6 +11,7 @@
  * a misconfigured deployment fails loudly at boot rather than silently at
  * the first request.
  */
+const fs = require('fs');
 const path = require('path');
 
 function int(name, fallback) {
@@ -87,6 +88,53 @@ const config = {
     return str('AGENTGATE_UI_ASSET_ROOT') || path.join(__dirname, '..', 'ui', 'dist');
   },
 
+  /**
+   * --- GitHub App (forge credential exchange) ---
+   *
+   * When these are set the broker exchanges each authorization decision for
+   * a real, repository-scoped GitHub App installation token. When they are
+   * not, the broker issues AgentGate session tokens only and behaves exactly
+   * as it did before the exchange existed. `githubAppConfigured` is the
+   * single switch every caller reads, so "unconfigured" is one condition
+   * rather than four scattered null checks.
+   */
+  get githubAppId() {
+    return str('AGENTGATE_GITHUB_APP_ID');
+  },
+  get githubInstallationId() {
+    return str('AGENTGATE_GITHUB_INSTALLATION_ID');
+  },
+  get githubPrivateKey() {
+    const inline = str('AGENTGATE_GITHUB_PRIVATE_KEY');
+    return inline ? inline.replace(/\\n/g, '\n') : null;
+  },
+  get githubPrivateKeyPath() {
+    return str('AGENTGATE_GITHUB_PRIVATE_KEY_PATH');
+  },
+  /** The account the installation belongs to. Bare repository names resolve
+   *  against it, so a mismatch is a scope-escalation attempt, not a typo. */
+  get githubOwner() {
+    return str('AGENTGATE_GITHUB_OWNER');
+  },
+  /** GitHub Enterprise Server API root. Unset means github.com. */
+  get githubApiBaseUrl() {
+    return str('AGENTGATE_GITHUB_API_BASE_URL');
+  },
+  /** Upper bound on the token-exchange call, so a stalled GitHub API becomes
+   *  a prompt denial rather than a hung `git push`. */
+  get githubMintTimeoutMs() {
+    return int('AGENTGATE_GITHUB_MINT_TIMEOUT_MS', 8000);
+  },
+
+  get githubAppConfigured() {
+    return !!(
+      config.githubAppId &&
+      config.githubInstallationId &&
+      config.githubOwner &&
+      (config.githubPrivateKey || config.githubPrivateKeyPath)
+    );
+  },
+
   /** 'debug' | 'info' | 'warn' | 'error' */
   get logLevel() {
     return str('AGENTGATE_LOG_LEVEL', 'info');
@@ -117,6 +165,45 @@ function assertProductionSafe() {
       'Broker is bound to 0.0.0.0 — terminate TLS in front of it and set AGENTGATE_ALLOW_PUBLIC_BIND=1 to confirm this is intended'
     );
   }
+  // --- GitHub App: partial configuration is the dangerous state ---
+  // All-unset is a supported deployment (session tokens only). Some-set means
+  // an operator intended the exchange and it will fail at the first push,
+  // long after the deploy that broke it.
+  const githubVars = {
+    AGENTGATE_GITHUB_APP_ID: config.githubAppId,
+    AGENTGATE_GITHUB_INSTALLATION_ID: config.githubInstallationId,
+    AGENTGATE_GITHUB_OWNER: config.githubOwner,
+  };
+  const keyConfigured = config.githubPrivateKey || config.githubPrivateKeyPath;
+  const anyGithub = keyConfigured || Object.values(githubVars).some(Boolean);
+  if (anyGithub) {
+    for (const [name, value] of Object.entries(githubVars)) {
+      if (!value) problems.push(`${name} must be set when any AGENTGATE_GITHUB_* variable is`);
+    }
+    if (!keyConfigured) {
+      problems.push(
+        'AGENTGATE_GITHUB_PRIVATE_KEY_PATH (preferred) or AGENTGATE_GITHUB_PRIVATE_KEY must be set when any AGENTGATE_GITHUB_* variable is'
+      );
+    } else if (config.githubPrivateKeyPath) {
+      // Read it now: a private key that is missing or unreadable by this uid
+      // must surface at boot, not on the first developer's first push.
+      try {
+        const pem = fs.readFileSync(config.githubPrivateKeyPath, 'utf8');
+        if (!pem.includes('PRIVATE KEY')) {
+          problems.push(`AGENTGATE_GITHUB_PRIVATE_KEY_PATH does not look like a PEM private key: ${config.githubPrivateKeyPath}`);
+        }
+        const mode = fs.statSync(config.githubPrivateKeyPath).mode & 0o077;
+        if (mode !== 0) {
+          problems.push(
+            `AGENTGATE_GITHUB_PRIVATE_KEY_PATH is readable by group or others — chmod 600 ${config.githubPrivateKeyPath}`
+          );
+        }
+      } catch (err) {
+        problems.push(`AGENTGATE_GITHUB_PRIVATE_KEY_PATH is not readable: ${err.message}`);
+      }
+    }
+  }
+
   if (problems.length) {
     throw new Error(`Unsafe production configuration:\n  - ${problems.join('\n  - ')}`);
   }

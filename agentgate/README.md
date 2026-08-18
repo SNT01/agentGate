@@ -189,6 +189,7 @@ image (§10).
 ### Make it invisible: the git credential helper
 
 ```bash
+git config --global credential.useHttpPath true
 git config --global credential.helper \
   '!node /absolute/path/to/agentgate/src/cli/credentialHelper.js'
 ```
@@ -196,6 +197,25 @@ git config --global credential.helper \
 From then on `git push` transparently fetches a fresh scoped credential.
 Nothing else in the developer's workflow changes, and no token is ever
 written to disk.
+
+`useHttpPath` is not optional. It is what makes git tell the helper *which
+repository* the credential is for; without it the broker cannot scope the
+minted token to one repository, and it denies rather than issue something
+broader. In CI, where there may be no global git config, set
+`AGENTGATE_REPOSITORY=owner/name` instead.
+
+**On macOS**, the Command Line Tools gitconfig registers `osxkeychain` as a
+credential helper. Git accumulates helpers across config scopes and stops at
+the first that answers, so a cached GitHub credential will satisfy every push
+without AgentGate ever being consulted — the symptom is an empty audit log.
+Clear the cached credential and prefix the helper list with an empty reset:
+
+```bash
+printf 'protocol=https\nhost=github.com\n' | git credential-osxkeychain erase
+git config --global --unset-all credential.helper
+git config --global --add credential.helper ''      # reset the inherited chain
+git config --global --add credential.helper '!node /absolute/path/to/agentgate/src/cli/credentialHelper.js'
+```
 
 ---
 
@@ -214,10 +234,107 @@ written to disk.
    ```
 4. In branch protection, require the `agentgate/verified` status check and
    require reviews (CODEOWNERS recommended).
-5. For real GitHub tokens rather than AgentGate session tokens:
-   `npm install @octokit/auth-app` and set the `AGENTGATE_GITHUB_*`
-   variables (see `env.example.txt`); `src/broker/githubToken.js` maps a
-   capability set to installation permissions.
+
+### Live GitHub App wiring
+
+Steps 1–4 make AgentGate *verify* what reaches GitHub. This step makes the
+credential itself real: the broker exchanges each authorization decision for
+a GitHub App installation token scoped to one repository and to the
+permissions the capability intersection allows. Without it the broker issues
+AgentGate session tokens only — verifiable by AgentGate components, and
+meaningless to GitHub, which rejects them with `Invalid username or token`.
+
+**Register the App.** Organisation settings → Developer settings → GitHub
+Apps → New. Untick webhook "Active" if this App only mints tokens. Grant
+exactly what `toGitHubPermissions` can request:
+
+| Permission | Level | Needed for |
+|---|---|---|
+| Contents | Read and write | `git push` |
+| Pull requests | Read and write | `pr:open`, `pr:comment` |
+| Metadata | Read-only | mandatory |
+
+Consider registering **two Apps** — the enforcer needs `checks: write` and
+the credential path has no use for it. Least privilege applies to Apps as
+much as to agents.
+
+**Collect the credentials.** App ID from the General page. Generate a private
+key, move the `.pem` outside the repository, and `chmod 600` it — the broker
+refuses to start in production if it is group- or world-readable. Prefer the
+path form over the inline PEM: environment variables reach process listings
+and crash dumps far more readily than a 0600 file.
+
+**Install it** on *only selected repositories*. The resulting URL ends in the
+installation id.
+
+**Configure the broker**, then `npm install --no-save @octokit/auth-app` (or
+add a `RUN` line to the Dockerfile) so `package.json` stays dependency-free:
+
+```bash
+AGENTGATE_GITHUB_APP_ID=...
+AGENTGATE_GITHUB_INSTALLATION_ID=...
+AGENTGATE_GITHUB_PRIVATE_KEY_PATH=/etc/agentgate/github-app.pem
+AGENTGATE_GITHUB_OWNER=your-org
+```
+
+`AGENTGATE_GITHUB_OWNER` is a security control, not a convenience. Bare
+repository names resolve against the *installation's* account, so without it
+a request naming `attacker/api` would mint a token scoped to `your-org/api`.
+Setting any one of these variables in production requires setting all of
+them — a half-configured exchange fails at the first push, long after the
+deploy that broke it.
+
+Verify the exchange before trusting it. The second command is the decisive
+one: a `ghs_`-prefixed password is the visible proof it happened.
+
+```bash
+curl -s localhost:4790/health
+
+printf 'protocol=https\nhost=github.com\npath=owner/repo.git\n\n' \
+  | node src/cli/credentialHelper.js get
+
+curl -s -H "Authorization: Bearer $AGENTGATE_ADMIN_TOKEN" \
+  localhost:4790/audit | grep forge_token_issued
+```
+
+### What the forge credential does *not* bound
+
+Three limits, stated plainly because each one looks like a bug when met
+unprepared.
+
+**It outlives the session.** GitHub fixes installation tokens at roughly one
+hour and accepts no lifetime parameter, while AgentGate's default session is
+fifteen minutes — so the git password survives up to forty-five minutes past
+the session that authorised it. For the *forge* credential the binding
+constraint is **scope** — one repository, minimal permissions — not lifetime.
+Both expiries are recorded on every `forge_token_issued` entry. Automatic
+post-push revocation is an explicit non-goal: the helper cannot know when git
+is finished, and nothing is persisted to revoke later. For break-glass, call
+GitHub's `DELETE /installation/token` with the credential in hand.
+
+**It is not branch-scoped.** GitHub has no per-branch token. A scope of
+`{branches: ['feature/*'], actions: ['push']}` mints a token GitHub would
+also accept on `main`. The branch half of a capability set is enforced by the
+enforcer's status check and by branch protection — the audit entry records
+`branchScope` so the divergence stays visible rather than assumed.
+
+**Pusher identity changes.** A push authenticated by an installation token is
+attributed to `agentgate[bot]` as pusher; commit authorship stays with the
+human, along with the agent trailers. Where "Restrict who can push to
+matching branches" is enabled, the App must be added to that list or every
+push returns 403 — an error that looks nothing like a credential problem.
+
+**Troubleshooting**
+
+| Symptom | Cause |
+|---|---|
+| `Invalid username or token` | the helper is not in git's chain — see the macOS note in §5 |
+| `no GitHub credential was minted` | the broker has no App configured |
+| `no repository in the credential request` | `credential.useHttpPath` is unset |
+| 401 from the exchange | App ID, private key, or broker clock skew (~60s tolerance) |
+| 404 from the exchange | wrong installation id, or the repository is not in the installation |
+| 403 / 422 from the exchange | the App lacks a permission this scope requires |
+| 403 on push with a valid token | branch protection excludes the App |
 
 Agent-authored commits carry git trailers (`Agent-ID`, `Sponsor`,
 `Session-ID`, `Signature`). If your organisation prefers Sigstore/gitsign or
@@ -287,10 +404,10 @@ where the agent runs, register only the public half.
 
 | Attack | Outcome |
 |---|---|
-| Leaked long-lived token | There isn't one. Credentials last 15 minutes and are branch-scoped. |
+| Leaked long-lived token | There isn't one. The session token lasts 15 minutes; the GitHub credential is scoped to a single repository and expires within the hour (§6). |
 | Captured token request replayed | Rejected: requests carry a signed timestamp and single-use nonce. |
 | Credential used from outside the office | Denied by the context check before any token is minted. |
-| Agent tries to push to `main` | Refused by its capability ceiling; the ceiling is signed into the card. |
+| Agent tries to push to `main` | Refused by its capability ceiling, which is signed into the card and checked by the enforcer's status check — GitHub tokens cannot themselves be branch-scoped (§6). |
 | Agent approves its own PR | Approval dismissed automatically. |
 | Forged or widened agent card | Fails registry signature verification. |
 | Offboarded employee's agents keep running | Revocation cascades instantly to every sponsored card and invalidates live tokens. |

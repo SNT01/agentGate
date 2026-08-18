@@ -22,6 +22,15 @@ COPY package.json ./
 COPY src ./src
 COPY --from=ui-build /src/ui/dist ./src/ui/dist
 
+# The GitHub App token exchange is the one optional dependency, kept out of
+# package.json so the default image has nothing to audit but our own code.
+# Build with `--build-arg WITH_GITHUB_APP=1` for deployments that mint real
+# GitHub credentials; without it the broker issues AgentGate session tokens
+# only. The AGENTGATE_GITHUB_* variables are supplied at run time (`-e`), and
+# the private key is mounted, never baked into a layer.
+ARG WITH_GITHUB_APP=0
+RUN if [ "$WITH_GITHUB_APP" = "1" ]; then npm install --no-save --no-package-lock @octokit/auth-app; fi
+
 # Run as a non-root user. The data directory holds the organisation's root
 # signing key, so it is owned by that user and nothing else can read it.
 RUN addgroup -S agentgate && adduser -S agentgate -G agentgate \

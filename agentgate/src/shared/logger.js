@@ -18,6 +18,11 @@ function threshold() {
 const SECRET_KEYS = new Set([
   'privateKey', 'private_key', 'signature', 'humanSignature',
   'token', 'password', 'adminToken', 'secret',
+  // Forge credentials. The primary defence is structural — the minted token
+  // is a sibling of the session token and is never handed to anything that
+  // persists or logs (see broker.js §"git" response field). This is the
+  // second line, for the day someone logs the whole response by mistake.
+  'git', 'forgeToken', 'installationToken', 'accessToken',
 ]);
 
 function redact(value) {

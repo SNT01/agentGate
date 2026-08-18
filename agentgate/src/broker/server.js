@@ -5,7 +5,9 @@
  *
  * Endpoints:
  *   GET  /health              — liveness + broker public key (unauthenticated)
- *   POST /token               — request a scoped, short-lived token
+ *   POST /token               — request a scoped, short-lived token (and,
+ *                               when a GitHub App is configured, the
+ *                               repository-scoped forge credential git uses)
  *   GET  /audit                — full audit log            (admin token required)
  *   GET  /audit/verify         — chain integrity check     (admin token required)
  *   GET  /admin/identities     — humans + agent cards      (admin token required)
@@ -121,7 +123,10 @@ function createServer(broker = new TokenBroker()) {
         } catch (_e) {
           return send(400, { granted: false, reason: 'invalid JSON body' });
         }
-        const result = broker.requestToken(body);
+        // Awaited: this path may mint a real forge credential. Dropping the
+        // await would serialise a pending promise as `{}` — a 200 with no
+        // token at all.
+        const result = await broker.requestTokenWithForgeCredential(body);
         return send(result.granted ? 200 : 403, result);
       }
 
