@@ -13,7 +13,7 @@ it compiles to static files the broker serves, and the broker still has
 nothing installed at runtime.
 
 ```bash
-npm test           # 160 tests
+npm test           # 173 tests
 npm run demo       # narrated end-to-end walkthrough
 npm run e2e:docker # deploy to local Docker and test the running service
 ```
@@ -197,6 +197,35 @@ node src/cli/cli.js audit list --limit 20
 
 Revoking a person immediately invalidates every agent card they sponsor —
 no need to hunt down their agents individually.
+
+### Managing more than a handful of agents
+
+Agent cards expire (30 days by default) so a forgotten agent stops working
+rather than running indefinitely. That is the right default and it scales into
+a chore: a hundred agents on a 30-day TTL is a few expiries every day, and
+nothing announces them.
+
+```bash
+node src/cli/cli.js list agents --expiring 7      # what breaks this week, soonest first
+node src/cli/cli.js renew <agentCardId>          # extend it, keeping the id
+node src/cli/cli.js list agents --tool claude-code --status active
+node src/cli/cli.js list agents --sponsor human_e9ba... --json
+```
+
+**Renewal keeps the card's id**, which matters more than it sounds: the audit
+history and the `Agent-ID` trailers on every commit that agent has authored
+refer to that id. Reissuing instead mints a new identity and silently detaches
+all of it.
+
+Renewing is not a way to gain authority. The capability set is recomputed as
+`sponsor ∩ card`, so a sponsor who has been narrowed since issuance yields a
+narrower card, never a wider one, and the command says so when it happens. A
+revoked card — or one whose sponsor is revoked — cannot be renewed at all;
+restoring authority somebody deliberately withdrew is the one thing revocation
+must be proof against.
+
+`agentgate doctor` reports cards expiring within a week, and fails (rather than
+warns) once any of them has actually expired.
 
 ---
 
@@ -600,7 +629,7 @@ GitHub ◄── Enforcer (GitHub App)
 | `src/shared/` | Crypto, capability algebra, audit chain, storage, config, logging |
 | `src/cli/` | `agentgate` CLI, the setup wizard (`init`), the diagnostic (`doctor`), client setup, and the git credential helper |
 | `ui/` | Admin dashboard (React/Vite, build-time deps only) — builds to `src/ui/dist`, served by the broker at `/ui` |
-| `test/` | 160 tests across all of the above |
+| `test/` | 173 tests across all of the above |
 
 ---
 

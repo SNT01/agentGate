@@ -42,7 +42,16 @@ Setup
       command to clear it, or does it with --clear-keychain.
 
 Operations
-  agentgate list [humans|agents]      Show enrolled identities and their status
+  agentgate list [humans|agents] [--tool NAME] [--sponsor <id>]
+                 [--status active|revoked|expired] [--expiring DAYS] [--json]
+      Show identities. The filters are what make a fleet navigable:
+      --expiring 7 answers "what breaks this week", soonest first.
+
+  agentgate renew <agentCardId> [--days N]
+      Extend a card's expiry, keeping its id — so its audit history and the
+      commit trailers naming it still resolve. Recomputed against the
+      sponsor's current capabilities, so it can only narrow, never widen.
+
   agentgate status <id>               Check one identity or agent card
   agentgate revoke <id> [--reason ".."]  Revoke; sponsors cascade to their agents
   agentgate audit [list|verify] [--limit N]   Inspect or verify the audit chain
@@ -174,25 +183,131 @@ function cmdIssueAgent(registry, flags) {
   }
 }
 
-function cmdList(registry, positional) {
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** "in 12 days" / "6 hours ago" — relative time reads faster than a date. */
+function relativeTime(ms) {
+  const abs = Math.abs(ms);
+  const [value, unit] =
+    abs >= DAY_MS ? [Math.round(abs / DAY_MS), 'day'] : [Math.round(abs / (60 * 60 * 1000)), 'hour'];
+  const plural = value === 1 ? unit : `${unit}s`;
+  return ms < 0 ? `${value} ${plural} ago` : `in ${value} ${plural}`;
+}
+
+/**
+ * List identities, with filters.
+ *
+ * A flat unpaginated dump is fine for the five identities a trial has and
+ * useless at several hundred, which is where this is heading — so the fleet
+ * questions ("whose agents are these", "what expires this week") are answerable
+ * without piping through grep.
+ */
+function cmdList(registry, positional, flags = {}) {
   const what = positional[0] || 'all';
+  const now = Date.now();
+
+  const wantTool = flags.tool === true ? null : flags.tool;
+  const wantSponsor = flags.sponsor === true ? null : flags.sponsor;
+  const status = flags.status === true ? null : flags.status;
+  const expiringDays = flags.expiring === true ? 7 : flags.expiring ? Number(flags.expiring) : null;
+
+  if (expiringDays !== null && !Number.isFinite(expiringDays)) {
+    throw new Error(`--expiring expects a number of days, got "${flags.expiring}"`);
+  }
+  if (status && !['active', 'revoked', 'expired'].includes(status)) {
+    throw new Error(`--status expects active, revoked, or expired, got "${status}"`);
+  }
+
   if (what === 'humans' || what === 'all') {
-    const humans = registry.listHumans();
-    console.log(`\nHumans (${humans.length}):`);
-    for (const h of humans) {
-      console.log(`  ${h.revoked ? '✗' : '✓'} ${h.id}  ${h.name}  contexts=[${h.allowedContexts}]${h.revoked ? '  REVOKED' : ''}`);
+    let humans = registry.listHumans();
+    if (status === 'active') humans = humans.filter((h) => !h.revoked);
+    if (status === 'revoked') humans = humans.filter((h) => h.revoked);
+    if (status === 'expired') humans = []; // humans do not expire; only cards do
+
+    if (flags.json) {
+      console.log(JSON.stringify({ humans }, null, 2));
+    } else {
+      console.log(`\nHumans (${humans.length}):`);
+      for (const h of humans) {
+        console.log(
+          `  ${h.revoked ? '✗' : '✓'} ${h.id}  ${h.name}  contexts=[${h.allowedContexts}]${h.revoked ? '  REVOKED' : ''}`
+        );
+      }
     }
   }
+
   if (what === 'agents' || what === 'all') {
-    const agents = registry.listAgentCards();
-    console.log(`\nAgent cards (${agents.length}):`);
+    let agents = registry.listAgentCards().map((a) => ({
+      ...a,
+      expiresInMs: new Date(a.expiresAt).getTime() - now,
+    }));
+
+    if (wantTool) agents = agents.filter((a) => a.tool.name === wantTool);
+    if (wantSponsor) agents = agents.filter((a) => a.sponsorId === wantSponsor);
+    if (status === 'active') agents = agents.filter((a) => !a.revoked && a.expiresInMs > 0);
+    if (status === 'revoked') agents = agents.filter((a) => a.revoked);
+    if (status === 'expired') agents = agents.filter((a) => !a.revoked && a.expiresInMs <= 0);
+    if (expiringDays !== null) {
+      agents = agents.filter((a) => !a.revoked && a.expiresInMs <= expiringDays * DAY_MS);
+    }
+    agents.sort((a, b) => a.expiresInMs - b.expiresInMs);
+
+    if (flags.json) {
+      console.log(JSON.stringify({ agents }, null, 2));
+      return;
+    }
+
+    const heading = expiringDays !== null ? `Agent cards expiring within ${expiringDays} day(s)` : 'Agent cards';
+    console.log(`\n${heading} (${agents.length}):`);
     for (const a of agents) {
+      const state = a.revoked ? '  REVOKED' : a.expiresInMs <= 0 ? '  EXPIRED' : '';
+      const mark = a.revoked || a.expiresInMs <= 0 ? '✗' : '✓';
       console.log(
-        `  ${a.revoked ? '✗' : '✓'} ${a.id}  ${a.tool.name}@${a.tool.version}  sponsor=${a.sponsorId}  context=${a.context}${a.revoked ? '  REVOKED' : ''}`
+        `  ${mark} ${a.id}  ${a.tool.name}@${a.tool.version}  sponsor=${a.sponsorId}  context=${a.context}  expires ${relativeTime(a.expiresInMs)}${state}`
       );
+    }
+    if (expiringDays !== null && agents.length) {
+      console.log(`\n  Renew one: agentgate renew ${agents[0].id}`);
     }
   }
   console.log('');
+}
+
+function cmdRenew(registry, broker, positional, flags) {
+  const id = positional[0];
+  if (!id) throw new Error('usage: agentgate renew <agentCardId> [--days N]');
+
+  const days = flags.days === true ? null : flags.days;
+  if (days !== null && days !== undefined && !Number.isFinite(Number(days))) {
+    throw new Error(`--days expects a number, got "${days}"`);
+  }
+  const ttlMs = days ? Number(days) * DAY_MS : undefined;
+
+  const result = registry.renewAgentCard(id, { ttlMs });
+
+  // Renewal extends authority in time, so it belongs on the audit chain. The
+  // card id is unchanged, which is the point — the history stays attached to
+  // one identity.
+  broker.recordAction({
+    action: 'agent_card_renewed',
+    agentCardId: result.agentCardId,
+    sponsorId: result.card.sponsorId,
+    tool: result.card.tool,
+    previousExpiresAt: result.previousExpiresAt,
+    expiresAt: result.card.expiresAt,
+    capabilities: result.card.capabilities,
+    narrowed: result.narrowed,
+    outcome: 'applied',
+  });
+
+  console.log(`Renewed ${result.agentCardId} (same id — history and commit trailers still resolve).`);
+  console.log(`  was:     ${result.previousExpiresAt}`);
+  console.log(`  expires: ${result.card.expiresAt}`);
+  if (result.narrowed) {
+    console.log(
+      `  narrowed to the sponsor's current capabilities: branches=[${result.card.capabilities.branches}] actions=[${result.card.capabilities.actions}]`
+    );
+  }
 }
 
 function cmdStatus(registry, positional) {
@@ -207,10 +322,23 @@ function cmdStatus(registry, positional) {
   }
 }
 
-function cmdRevoke(registry, positional, flags) {
+function cmdRevoke(registry, broker, positional, flags) {
   const id = positional[0];
   if (!id) throw new Error('usage: agentgate revoke <id> [--reason "..."]');
-  const result = registry.revoke(id, flags.reason === true ? undefined : flags.reason);
+  const reason = flags.reason === true ? undefined : flags.reason;
+  const result = registry.revoke(id, reason);
+
+  // Revoking through the dashboard has always been audited; revoking through
+  // the CLI was not, so the most consequential operation available left no
+  // trace when performed the usual way. Same entry either way now.
+  broker.recordAction({
+    action: 'identity_revoked',
+    revokedId: result.revoked,
+    reason: reason || 'unspecified',
+    cascadedTo: result.cascadedTo,
+    outcome: 'applied',
+  });
+
   console.log(`Revoked ${result.revoked}.`);
   if (result.cascadedTo.length) {
     console.log(`Cascaded to ${result.cascadedTo.length} sponsored agent card(s):`);
@@ -265,20 +393,25 @@ function main() {
   }
 
   const registry = new Registry();
+  // Commands that change or read authority record to the audit chain, so they
+  // need the broker that owns it.
+  const withBroker = () => new TokenBroker(config.dataDir, { registry });
 
   switch (cmd) {
     case 'enroll':
       return cmdEnroll(registry, flags);
     case 'issue-agent':
       return cmdIssueAgent(registry, flags);
+    case 'renew':
+      return cmdRenew(registry, withBroker(), positional, flags);
     case 'list':
-      return cmdList(registry, positional);
+      return cmdList(registry, positional, flags);
     case 'status':
       return cmdStatus(registry, positional);
     case 'revoke':
-      return cmdRevoke(registry, positional, flags);
+      return cmdRevoke(registry, withBroker(), positional, flags);
     case 'audit':
-      return cmdAudit(new TokenBroker(config.dataDir, { registry }), positional, flags);
+      return cmdAudit(withBroker(), positional, flags);
     default:
       console.error(`Unknown command: ${cmd}\n`);
       console.log(USAGE);

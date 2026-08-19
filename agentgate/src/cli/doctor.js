@@ -204,6 +204,49 @@ function checkDataDir() {
   };
 }
 
+/**
+ * Agent cards about to expire.
+ *
+ * An expiring card is not a misconfiguration, but it becomes an outage on a
+ * known date, and nothing else tells anybody. On a 30-day TTL a fleet of a few
+ * hundred agents produces several of these a day, so it belongs in the routine
+ * check rather than in a calendar reminder somebody has to remember to make.
+ */
+function checkExpiringCards() {
+  const dir = config.dataDir;
+  const registryPath = path.join(dir, 'registry.json');
+  if (!fs.existsSync(registryPath)) {
+    return { name: 'card expiry', status: PASS, detail: 'no identities yet' };
+  }
+
+  let registry;
+  try {
+    // Read directly: constructing a Registry would generate a root key as a
+    // side effect on a directory that has none.
+    const { Registry } = require('../registry/registry');
+    registry = new Registry(dir);
+  } catch (err) {
+    return { name: 'card expiry', status: WARN, detail: `could not read the registry: ${err.message}` };
+  }
+
+  const soon = registry.listExpiringAgentCards(7 * 24 * 60 * 60 * 1000);
+  if (!soon.length) {
+    return { name: 'card expiry', status: PASS, detail: 'no agent cards expire within 7 days' };
+  }
+
+  const expired = soon.filter((c) => c.expiresInMs <= 0);
+  const detail = expired.length
+    ? `${expired.length} agent card(s) have ALREADY expired and are failing now; ${soon.length - expired.length} more within 7 days`
+    : `${soon.length} agent card(s) expire within 7 days`;
+
+  return {
+    name: 'card expiry',
+    status: expired.length ? FAIL : WARN,
+    detail,
+    fix: `agentgate list agents --expiring 7    then: agentgate renew <agentCardId>`,
+  };
+}
+
 async function checkBrokerReachable() {
   const url = brokerUrl();
   const res = await get(`${url}/health`);
@@ -469,7 +512,13 @@ async function runChecks({ scope = 'all' } = {}) {
   if (scope === 'all' || scope === 'broker') {
     groups.push({
       title: 'Configuration',
-      results: [checkConfigFile(), checkConfigValues(), checkAdminToken(), checkDataDir()],
+      results: [
+        checkConfigFile(),
+        checkConfigValues(),
+        checkAdminToken(),
+        checkDataDir(),
+        checkExpiringCards(),
+      ],
     });
     groups.push({
       title: 'Broker',
