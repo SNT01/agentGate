@@ -32,6 +32,15 @@ Setup
       Issue an Agent Identity Card for an AI tool, sponsored by a human.
       The card's capabilities are narrowed to at most the sponsor's own.
 
+  agentgate setup-client [--human <id>] [--key <base64>] [--agent <id>]
+                        [--context office] [--broker-url URL]
+                        [--local] [--dry-run] [--clear-keychain]
+      Point this machine's \`git push\` at AgentGate: store the identity in
+      ~/.config/agentgate/credentials.json (mode 0600), put the credential
+      helper first in git's chain, and set credential.useHttpPath.
+      A cached keychain credential still answers first; this prints the
+      command to clear it, or does it with --clear-keychain.
+
 Operations
   agentgate list [humans|agents]      Show enrolled identities and their status
   agentgate status <id>               Check one identity or agent card
@@ -116,10 +125,13 @@ function cmdEnroll(registry, flags) {
   console.log(`  capabilities: branches=[${capabilities.branches}] actions=[${capabilities.actions}]`);
   if (result.privateKey) {
     console.log(`  private key:  ${result.privateKey}`);
-    console.log('\n  Store the private key in your OS keychain. Never commit it.');
-    console.log('  Export it for the credential helper:');
-    console.log(`    export AGENTGATE_HUMAN_ID=${result.humanId}`);
-    console.log(`    export AGENTGATE_HUMAN_PRIVATE_KEY="${result.privateKey}"`);
+    console.log('\n  This is the only time the private key is shown. Never commit it.');
+    console.log('  To use it on the machine that pushes, in one command:');
+    console.log(`    agentgate setup-client --human ${result.humanId} --key "${result.privateKey}"`);
+    console.log('\n  (That stores it mode 0600 and configures git. Environment variables');
+    console.log('   still work if you prefer them:');
+    console.log(`     export AGENTGATE_HUMAN_ID=${result.humanId}`);
+    console.log(`     export AGENTGATE_HUMAN_PRIVATE_KEY="${result.privateKey}")`);
   }
 }
 
@@ -154,9 +166,11 @@ function cmdIssueAgent(registry, flags) {
   console.log(`  expires:      ${card.expiresAt}`);
   if (result.privateKey) {
     console.log(`  private key:  ${result.privateKey}`);
-    console.log('\n  Export for the agent process:');
-    console.log(`    export AGENTGATE_AGENT_CARD_ID=${result.agentCardId}`);
-    console.log(`    export AGENTGATE_AGENT_PRIVATE_KEY="${result.privateKey}"`);
+    console.log('\n  For the machine or process the agent runs on:');
+    console.log(`    agentgate setup-client --agent ${result.agentCardId} --agent-key "${result.privateKey}"`);
+    console.log('\n  (Or, for a container or CI job:');
+    console.log(`     export AGENTGATE_AGENT_CARD_ID=${result.agentCardId}`);
+    console.log(`     export AGENTGATE_AGENT_PRIVATE_KEY="${result.privateKey}")`);
   }
 }
 
@@ -242,6 +256,12 @@ function main() {
   if (cmd === 'doctor') {
     const { cmdDoctor } = require('./doctor');
     return cmdDoctor(flags);
+  }
+  // setup-client touches only this machine's git config and the user's own
+  // credential file — it never reads the registry.
+  if (cmd === 'setup-client') {
+    const { cmdSetupClient } = require('./setupClient');
+    return cmdSetupClient(flags);
   }
 
   const registry = new Registry();

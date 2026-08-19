@@ -341,21 +341,25 @@ function checkUseHttpPath() {
 }
 
 function checkClientIdentity() {
-  const humanId = process.env.AGENTGATE_HUMAN_ID;
-  const key = process.env.AGENTGATE_HUMAN_PRIVATE_KEY;
-  if (!humanId || !key) {
+  const { resolveIdentity, credentialsPath } = require('./clientConfig');
+  const identity = resolveIdentity();
+
+  if (!identity.humanId || !identity.humanPrivateKey) {
     return {
       name: 'client identity',
       status: WARN,
-      detail: 'AGENTGATE_HUMAN_ID / AGENTGATE_HUMAN_PRIVATE_KEY are not set in this shell',
-      fix: 'export the values `agentgate enroll` printed (only needed on a machine that pushes)',
+      detail: `no identity in the environment or ${credentialsPath()}`,
+      fix: 'agentgate setup-client --human human_... --key "MC4C..."    (only needed on a machine that pushes)',
     };
   }
-  const agentCardId = process.env.AGENTGATE_AGENT_CARD_ID;
+
+  // Naming the source matters: "it works in my shell but not from my editor"
+  // is exactly what an environment-only identity looks like.
+  const from = identity.source.humanId === 'env' ? 'environment' : credentialsPath();
   return {
     name: 'client identity',
     status: PASS,
-    detail: `${humanId}${agentCardId ? ` acting as ${agentCardId}` : ' (no agent card — pushing as yourself)'}, context ${process.env.AGENTGATE_CONTEXT || 'office'}`,
+    detail: `${identity.humanId}${identity.agentCardId ? ` acting as ${identity.agentCardId}` : ' (no agent card — pushing as yourself)'}, context ${identity.context} — from ${from}`,
   };
 }
 

@@ -22,7 +22,7 @@ scoped instead of long-lived and total. Every commit is verified before it
 can merge, agent approvals never count, and every decision is recorded in a
 log that cannot be quietly edited.
 
-**Status:** implemented and tested — 131 tests, a narrated end-to-end demo,
+**Status:** implemented and tested — 160 tests, a narrated end-to-end demo,
 no runtime dependencies. See [`agentgate/README.md`](./agentgate/README.md).
 
 ---
@@ -222,7 +222,7 @@ protocol. It should be paired with mandatory review and CI scanning.
 
 ## 6. Implementation
 
-Complete and tested in [`agentgate/`](./agentgate/): 131 tests, a narrated
+Complete and tested in [`agentgate/`](./agentgate/): 160 tests, a narrated
 end-to-end demo, and **no runtime dependencies** — the service runs on
 Node's standard library, so there is nothing to audit but the project's own
 code.

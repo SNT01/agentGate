@@ -13,7 +13,7 @@ it compiles to static files the broker serves, and the broker still has
 nothing installed at runtime.
 
 ```bash
-npm test           # 131 tests
+npm test           # 160 tests
 npm run demo       # narrated end-to-end walkthrough
 npm run e2e:docker # deploy to local Docker and test the running service
 ```
@@ -149,8 +149,20 @@ Human enrolled.
   private key:  MC4CAQAwBQYDK2VwBCIEIIg...
 ```
 
-Store the private key in your OS keychain and export it for the credential
-helper (the command prints these lines for you):
+Then, on the machine you push from — one command, which the output above
+prints for you ready to paste:
+
+```bash
+agentgate setup-client --human human_e9ba335781b9cf36 --key "MC4CAQAwBQYDK2VwBCIEIIg..."
+```
+
+That stores the identity in `~/.config/agentgate/credentials.json` at mode
+`0600`, puts the credential helper first in git's chain, and sets
+`credential.useHttpPath`. Nothing goes in your shell profile, so the key is not
+in a file that gets backed up, synced, and read by every process you start.
+
+Environment variables still work and still take precedence, which is what CI
+and containerised agents should use:
 
 ```bash
 export AGENTGATE_HUMAN_ID=human_e9ba335781b9cf36
@@ -255,29 +267,45 @@ image (§10).
 ### Make it invisible: the git credential helper
 
 ```bash
+agentgate setup-client         # add --human/--key to store an identity too
+agentgate doctor --client      # confirm git will actually consult AgentGate
+```
+
+From then on `git push` transparently fetches a fresh scoped credential.
+Nothing else in the developer's workflow changes, and no token is ever
+written to disk. `--dry-run` prints the commands it would run; `--local`
+configures one repository instead of the whole machine.
+
+The two settings it writes, and why each is not optional:
+
+```bash
 git config --global credential.useHttpPath true
 git config --global credential.helper \
   '!node /absolute/path/to/agentgate/src/cli/credentialHelper.js'
 ```
 
-From then on `git push` transparently fetches a fresh scoped credential.
-Nothing else in the developer's workflow changes, and no token is ever
-written to disk.
+`useHttpPath` is what makes git tell the helper *which repository* the
+credential is for; without it the broker cannot scope the minted token to one
+repository, and it denies rather than issue something broader. In CI, where
+there may be no global git config, set `AGENTGATE_REPOSITORY=owner/name`
+instead.
 
-`useHttpPath` is not optional. It is what makes git tell the helper *which
-repository* the credential is for; without it the broker cannot scope the
-minted token to one repository, and it denies rather than issue something
-broader. In CI, where there may be no global git config, set
-`AGENTGATE_REPOSITORY=owner/name` instead.
-
-**On macOS**, the Command Line Tools gitconfig registers `osxkeychain` as a
+**On macOS there is a third thing**, and it is the one that wastes an
+afternoon. The Command Line Tools gitconfig registers `osxkeychain` as a
 credential helper. Git accumulates helpers across config scopes and stops at
-the first that answers, so a cached GitHub credential will satisfy every push
-without AgentGate ever being consulted — the symptom is an empty audit log.
-Clear the cached credential and prefix the helper list with an empty reset:
+the first that answers, so a cached GitHub credential satisfies every push
+without AgentGate ever being consulted — and the symptom is an *empty audit
+log*, which looks like AgentGate doing nothing rather than a misconfiguration.
+
+`setup-client` handles the helper ordering (the empty first entry below is what
+discards the inherited chain) and `doctor` detects it if anything puts it back.
+Clearing the cached credential is left to you, because it also signs other
+tools on the machine out of GitHub:
 
 ```bash
 printf 'protocol=https\nhost=github.com\n' | git credential-osxkeychain erase
+# or: agentgate setup-client --clear-keychain
+
 git config --global --unset-all credential.helper
 git config --global --add credential.helper ''      # reset the inherited chain
 git config --global --add credential.helper '!node /absolute/path/to/agentgate/src/cli/credentialHelper.js'
@@ -555,9 +583,9 @@ GitHub ◄── Enforcer (GitHub App)
 | `src/broker/` | Token broker, replay protection, posture checks, HTTP service, GitHub token exchange |
 | `src/enforcer/` | Commit verification, review gate, GitHub App wiring |
 | `src/shared/` | Crypto, capability algebra, audit chain, storage, config, logging |
-| `src/cli/` | `agentgate` CLI and the git credential helper |
+| `src/cli/` | `agentgate` CLI, the setup wizard (`init`), the diagnostic (`doctor`), client setup, and the git credential helper |
 | `ui/` | Admin dashboard (React/Vite, build-time deps only) — builds to `src/ui/dist`, served by the broker at `/ui` |
-| `test/` | 131 tests across all of the above |
+| `test/` | 160 tests across all of the above |
 
 ---
 

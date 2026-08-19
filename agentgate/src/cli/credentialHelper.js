@@ -34,6 +34,7 @@ const http = require('http');
 const https = require('https');
 const { sign, randomId } = require('../shared/crypto');
 const { config } = require('../shared/config');
+const { resolveIdentity } = require('./clientConfig');
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const PUBLIC_FORGE_HOSTS = /(^|\.)(github\.com|githubusercontent\.com)$/i;
@@ -192,11 +193,14 @@ function assertBrokerTransportSafe(brokerUrl) {
  * @param {{repository?: string, host?: string, protocol?: string}} [context]
  */
 async function requestToken(context = {}) {
-  const humanId = process.env.AGENTGATE_HUMAN_ID;
-  const humanPrivateKey = process.env.AGENTGATE_HUMAN_PRIVATE_KEY;
+  // Environment variables first, then ~/.config/agentgate/credentials.json —
+  // so nothing that works today changes, and a developer no longer has to
+  // paste a private key into a shell profile. See clientConfig.js.
+  const identity = resolveIdentity();
+  const { humanId, humanPrivateKey } = identity;
   if (!humanId || !humanPrivateKey) {
     throw new Error(
-      'AGENTGATE_HUMAN_ID / AGENTGATE_HUMAN_PRIVATE_KEY are not set — run `agentgate enroll` and export the values it prints'
+      'no AgentGate identity found — run `agentgate setup-client` (or export AGENTGATE_HUMAN_ID and AGENTGATE_HUMAN_PRIVATE_KEY)'
     );
   }
 
@@ -206,7 +210,7 @@ async function requestToken(context = {}) {
   const timestamp = Date.now();
   const humanSignature = sign({ humanId, nonce, timestamp }, humanPrivateKey);
 
-  const brokerUrl = (process.env.AGENTGATE_BROKER_URL || defaultBrokerUrl()).replace(/\/$/, '');
+  const brokerUrl = (identity.brokerUrl || defaultBrokerUrl()).replace(/\/$/, '');
   assertBrokerTransportSafe(brokerUrl);
 
   return postJson(`${brokerUrl}/token`, {
@@ -214,8 +218,8 @@ async function requestToken(context = {}) {
     humanSignature,
     nonce,
     timestamp,
-    agentCardId: process.env.AGENTGATE_AGENT_CARD_ID || null,
-    context: process.env.AGENTGATE_CONTEXT || 'office',
+    agentCardId: identity.agentCardId || null,
+    context: identity.context,
     // Repository scoping: without this the broker cannot narrow the forge
     // token to one repository. AGENTGATE_REPOSITORY covers CI and agent
     // processes that have no global git config.

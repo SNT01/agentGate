@@ -15,7 +15,7 @@ that cannot be quietly edited.
 ```bash
 cd agentgate
 npm run demo       # narrated end-to-end walkthrough — no install needed
-npm test           # 131 tests
+npm test           # 160 tests
 npm run e2e:docker # deploy to local Docker and test the running service
 ```
 
