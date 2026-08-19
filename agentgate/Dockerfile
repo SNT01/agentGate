@@ -52,7 +52,10 @@ VOLUME ["/data"]
 
 EXPOSE 4790
 
+# The port comes from the environment: hardcoding it meant overriding
+# AGENTGATE_BROKER_PORT at runtime left the healthcheck probing a port nothing
+# listened on, and the container reported itself unhealthy while working fine.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://127.0.0.1:4790/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+  CMD node -e "const p=process.env.AGENTGATE_BROKER_PORT||4790;require('http').get('http://127.0.0.1:'+p+'/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
 CMD ["node", "src/broker/server.js"]

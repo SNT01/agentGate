@@ -1,9 +1,17 @@
 name: CI
 
+# This file must live at the repository root. GitHub only reads
+# .github/workflows/ from the root, so while it sat in agentgate/.github/ the
+# whole matrix below never ran. The project code is one directory down, hence
+# the working-directory default on every job.
 on:
   push:
     branches: [main]
   pull_request:
+
+defaults:
+  run:
+    working-directory: agentgate
 
 jobs:
   test:
@@ -26,6 +34,24 @@ jobs:
       - name: Run the end-to-end demo
         run: npm run demo
 
+  dashboard-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+          cache-dependency-path: agentgate/ui/package-lock.json
+
+      # The dashboard is build-time-only, but a broken build should fail here
+      # rather than at an operator's first `npm run build`.
+      - name: Build the admin dashboard
+        working-directory: agentgate/ui
+        run: |
+          npm ci
+          npm run build
+
   production-config-check:
     runs-on: ubuntu-latest
     steps:
@@ -42,6 +68,18 @@ jobs:
             exit 1
           fi
           echo "Unsafe production config correctly rejected"
+
+      - name: Reject a negated public-bind confirmation
+        run: |
+          set -e
+          if NODE_ENV=production AGENTGATE_BROKER_HOST=0.0.0.0 \
+             AGENTGATE_ALLOW_PUBLIC_BIND=0 \
+             AGENTGATE_ADMIN_TOKEN=0123456789abcdef0123456789abcdef0123 \
+             node -e "require('./src/shared/config').assertProductionSafe()" 2>/dev/null; then
+            echo "AGENTGATE_ALLOW_PUBLIC_BIND=0 must not confirm a public bind"
+            exit 1
+          fi
+          echo "Negated public-bind confirmation correctly rejected"
 
       - name: Accept a valid production configuration
         env:

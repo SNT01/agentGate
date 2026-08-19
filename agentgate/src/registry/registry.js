@@ -19,7 +19,7 @@
  */
 const path = require('path');
 const { JsonStore } = require('../shared/store');
-const { generateKeyPair, sign, verify, randomId } = require('../shared/crypto');
+const { generateKeyPair, sign, verify, randomId, sha256 } = require('../shared/crypto');
 const { intersectCapabilities, isEmptyCapabilitySet } = require('../shared/capability');
 const { config } = require('../shared/config');
 
@@ -63,12 +63,28 @@ class Registry {
     if (!key) {
       key = generateKeyPair();
       this.rootKeyStore.save(key);
+      // A freshly generated root key is either a first run or a disaster: a
+      // typo in AGENTGATE_DATA_DIR points at an empty directory, a new root
+      // key is minted there, and every agent card signed by the real root
+      // fails verification. Both look identical from here, so record it and
+      // let the caller decide how loudly to say so.
+      this.rootKeyGenerated = true;
+    } else {
+      this.rootKeyGenerated = false;
     }
     this.rootKeyPair = key;
   }
 
   get rootPublicKey() {
     return this.rootKeyPair.publicKey;
+  }
+
+  /**
+   * Short fingerprint of the root public key, for operators comparing the key
+   * a broker booted with against the one they expect.
+   */
+  get rootKeyFingerprint() {
+    return sha256(this.rootKeyPair.publicKey).slice(0, 16);
   }
 
   /**

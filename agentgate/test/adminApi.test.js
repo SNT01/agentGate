@@ -191,6 +191,31 @@ test('GET /admin/sessions reports scope and context for a live session', async (
   });
 });
 
+test('GET /admin/sessions omits expired sessions', async () => {
+  // Sessions are pruned opportunistically on write, so a quiet broker keeps
+  // expired rows on disk. The dashboard reported them as live, which makes the
+  // one table an operator consults during an incident actively misleading.
+  await withServer(async ({ port, registry, broker }) => {
+    const { humanId, privateKey } = registry.enrollHuman({ name: 'Frank', allowedContexts: ['office'] });
+    await request(port, { method: 'POST', path: '/token', body: signedTokenRequest(humanId, privateKey) });
+
+    const live = await request(port, { path: '/admin/sessions', headers: auth() });
+    assert.strictEqual(live.body.sessions.length, 1, 'precondition: one live session');
+
+    // Age the stored session past its expiry without touching the write path
+    // that would prune it.
+    const sessions = broker.sessions.load();
+    for (const session of Object.values(sessions)) {
+      session.expiresAt = Date.now() - 1000;
+    }
+    broker.sessions.save(sessions);
+
+    const after = await request(port, { path: '/admin/sessions', headers: auth() });
+    assert.strictEqual(after.status, 200);
+    assert.deepStrictEqual(after.body.sessions, [], 'an expired session must not be reported as live');
+  });
+});
+
 // --- POST /admin/revoke ---
 
 test('POST /admin/revoke requires the admin bearer token', async () => {

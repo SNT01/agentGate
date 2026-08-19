@@ -13,7 +13,7 @@ it compiles to static files the broker serves, and the broker still has
 nothing installed at runtime.
 
 ```bash
-npm test           # 96 tests
+npm test           # 131 tests
 npm run demo       # narrated end-to-end walkthrough
 npm run e2e:docker # deploy to local Docker and test the running service
 ```
@@ -79,6 +79,21 @@ npm test
 
 The CLI is the only thing a person runs directly. After setup, `git push`
 works exactly as before.
+
+Every example below uses `node src/cli/cli.js`, which works from a clone with
+nothing installed. To get the shorter `agentgate` form on your `PATH`:
+
+```bash
+npm link          # from agentgate/, or `npm install -g .`
+agentgate help
+```
+
+**The CLI reads and writes the broker's data directory directly.** It is an
+administrator's tool, run where the state lives — the same machine, or
+`docker exec` for a containerised broker. Running it on your laptop against a
+broker in a container silently creates a *second*, empty registry, and every
+push is then denied with `unknown human`. (A remote provisioning API is the
+next planned step; until then, mind which filesystem you are on.)
 
 ### Enroll yourself (once)
 
@@ -356,14 +371,34 @@ nothing else changes.
 
 ## 7. Configuration
 
-Copy `env.example.txt` and adjust. Every value has a safe default in
-development; production enforces the important ones at startup and refuses
-to boot otherwise:
+```bash
+cp env.example.txt .env      # the broker loads this at startup
+```
+
+Real environment variables override the file, so a container's `-e` flags win
+over `.env`. Point `AGENTGATE_ENV_FILE` somewhere else to load a different
+file. Every value has a safe default in development.
+
+**Nothing is guessed.** A value the broker cannot parse stops startup in every
+environment, with a message naming the variable — rather than surfacing later
+as an opaque 500 from whichever request first read it. Booleans accept
+`1/true/yes/on` or `0/false/no/off`; anything else is an error, because a typo
+in a security switch must never resolve to a default.
+
+Production additionally enforces, and refuses to boot otherwise:
 
 - `AGENTGATE_ADMIN_TOKEN` must be set and at least 32 characters.
 - `AGENTGATE_TOKEN_TTL_MS` may not exceed one hour.
-- Binding to `0.0.0.0` requires `AGENTGATE_ALLOW_PUBLIC_BIND=1` as explicit
-  confirmation that TLS is terminated in front.
+- Binding to `0.0.0.0` requires `AGENTGATE_ALLOW_PUBLIC_BIND=true` as explicit
+  confirmation that TLS is terminated in front. A false-ish value is a
+  refusal, not a confirmation.
+- Any one `AGENTGATE_GITHUB_*` variable requires all of them (§6).
+
+The startup log records which `.env` file was loaded, the data directory, and
+a fingerprint of the registry root key. If the broker had to *generate* a root
+key it says so, loudly — on a data directory that already holds agent cards
+that means the key file went missing and every existing card will now fail
+verification. Check `AGENTGATE_DATA_DIR` before doing anything else.
 
 ### Docker
 
@@ -378,6 +413,22 @@ curl http://127.0.0.1:4790/health
 The image runs as a non-root user, stores state mode `0600` on a mounted
 volume, and ships a healthcheck. Without a valid configuration it refuses to
 start rather than coming up in a weakened state.
+
+Two things about the image catch people out, both consequences of it setting
+`NODE_ENV=production`:
+
+- **Enrollment runs inside the container**, because the CLI works on the data
+  directory and the container's is `/data` on the mounted volume:
+
+  ```bash
+  agentgate keygen                       # on your machine, keep the private key
+  docker exec agentgate node src/cli/cli.js \
+    enroll --name "Alice" --contexts office --public-key "MCowBQYDK2Vw..."
+  ```
+
+- **It will not generate keypairs for you** — `enroll` and `issue-agent`
+  require `--public-key` (see "Enrolling in production" below). This is the
+  point of production mode, not a limitation to work around.
 
 To deploy and verify the whole thing in one command:
 
@@ -460,7 +511,7 @@ GitHub ◄── Enforcer (GitHub App)
 | `src/shared/` | Crypto, capability algebra, audit chain, storage, config, logging |
 | `src/cli/` | `agentgate` CLI and the git credential helper |
 | `ui/` | Admin dashboard (React/Vite, build-time deps only) — builds to `src/ui/dist`, served by the broker at `/ui` |
-| `test/` | 96 tests across all of the above |
+| `test/` | 131 tests across all of the above |
 
 ---
 
