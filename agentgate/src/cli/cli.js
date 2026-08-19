@@ -11,6 +11,11 @@ const { config } = require('../shared/config');
 const USAGE = `agentgate — identity gate for repositories and the AI agents that act on them
 
 Setup
+  agentgate init [--yes] [--force] [--env <path>]
+      Write a working .env: bind address, generated admin token, data
+      directory, and optionally a GitHub App. Start here on a new install.
+      --yes accepts every default, for containers and CI.
+
   agentgate keygen
       Generate a keypair locally. Keep the private key; hand the public key
       to an administrator to enroll with. Required in production, where the
@@ -32,6 +37,13 @@ Operations
   agentgate status <id>               Check one identity or agent card
   agentgate revoke <id> [--reason ".."]  Revoke; sponsors cascade to their agents
   agentgate audit [list|verify] [--limit N]   Inspect or verify the audit chain
+
+Diagnosis
+  agentgate doctor [--broker|--client] [--json]
+      Check this deployment and name the fix for anything wrong: config that
+      does not parse, an unreachable broker, a git credential helper that
+      never gets consulted, a half-configured GitHub App, an unbuilt
+      dashboard. Start here when something does not work.
 
 Valid actions: ${VALID_ACTIONS.join(', ')}
 Data directory: ${config.dataDir}
@@ -218,6 +230,20 @@ function main() {
   // so a developer can generate a key before they have any access at all.
   if (cmd === 'keygen') return cmdKeygen(flags);
 
+  // `init` and `doctor` must run *before* the registry is constructed.
+  // Constructing one creates the data directory and a root key as a side
+  // effect — which is the state `doctor` is meant to report on, and the
+  // decision `init` is meant to ask about. Both also have to work on a
+  // machine that has no data directory at all.
+  if (cmd === 'init') {
+    const { cmdInit } = require('./init');
+    return cmdInit(flags);
+  }
+  if (cmd === 'doctor') {
+    const { cmdDoctor } = require('./doctor');
+    return cmdDoctor(flags);
+  }
+
   const registry = new Registry();
 
   switch (cmd) {
@@ -240,9 +266,16 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (err) {
+function fail(err) {
   console.error(`Error: ${err.message}`);
   process.exitCode = 1;
+}
+
+try {
+  // Most commands are synchronous; `doctor` makes HTTP calls and returns a
+  // promise. Handling both keeps one error path for every command.
+  const result = main();
+  if (result && typeof result.catch === 'function') result.catch(fail);
+} catch (err) {
+  fail(err);
 }

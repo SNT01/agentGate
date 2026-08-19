@@ -19,6 +19,15 @@ npm test           # 131 tests
 npm run e2e:docker # deploy to local Docker and test the running service
 ```
 
+Setting it up for real is two commands — `init` writes a validated `.env`
+(generated admin token and all), and `doctor` checks the result end to end and
+names the fix for anything wrong:
+
+```bash
+node src/cli/cli.js init
+node src/cli/cli.js doctor
+```
+
 - **[agentgate/README.md](./agentgate/README.md)** — how to install, use the
   CLI, run the broker, and enforce it on a real GitHub repository.
 - **[AgentGate-Report.md](./AgentGate-Report.md)** — the design report: the

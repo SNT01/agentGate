@@ -56,6 +56,8 @@ because of how scope is computed, not because a policy file is correct.
 
 ## 3. Quick start
 
+See it work first, with nothing to install and nothing to configure:
+
 ```bash
 cd agentgate
 npm run demo
@@ -72,6 +74,44 @@ For the exhaustive assertions:
 ```bash
 npm test
 ```
+
+### Setting up for real
+
+Two commands, and neither asks you to assemble environment variables by hand:
+
+```bash
+node src/cli/cli.js init      # writes .env: generated admin token, bind
+                              # address, data directory, optional GitHub App
+npm run broker                # start it
+
+node src/cli/cli.js doctor    # verify the whole thing, end to end
+```
+
+`init` asks only the questions that have no safe answer, generates the admin
+token rather than making you invent one, validates every response before
+writing anything, and refuses to emit a half-configured GitHub App — the state
+that otherwise fails at the first push. `--yes` takes every default, for
+containers and CI.
+
+**`doctor` is where to start whenever something does not work.** It checks the
+things that otherwise fail silently and prints the command that fixes each one:
+
+```
+Client (this machine pushing code)
+----------------------------------
+  ✗ git credential helper: osxkeychain is consulted before AgentGate and will
+    answer first — pushes will never reach the broker (the symptom is an empty
+    audit log)
+      fix: git config --global --unset-all credential.helper && ...
+```
+
+It covers the configuration file and every value in it, the data directory and
+whether the root key that signed your agent cards is still there, whether the
+broker is reachable and accepts your admin token, whether the audit chain
+verifies, whether the dashboard is built, whether the GitHub App is whole, and
+on a developer's machine whether git will actually consult AgentGate. Exit
+status is non-zero only for real failures, so it works as a CI smoke test;
+`--json` reports the same checks as structured data.
 
 ---
 
@@ -352,6 +392,9 @@ push returns 403 — an error that looks nothing like a credential problem.
 
 **Troubleshooting**
 
+Run `agentgate doctor` first — it detects most of the table below and prints
+the fix. The table is the reference for what it is telling you.
+
 | Symptom | Cause |
 |---|---|
 | `Invalid username or token` | the helper is not in git's chain — see the macOS note in §5 |
@@ -372,8 +415,11 @@ nothing else changes.
 ## 7. Configuration
 
 ```bash
-cp env.example.txt .env      # the broker loads this at startup
+node src/cli/cli.js init     # generates .env for you (recommended)
+cp env.example.txt .env      # or start from the annotated example
 ```
+
+The broker loads `.env` at startup.
 
 Real environment variables override the file, so a container's `-e` flags win
 over `.env`. Point `AGENTGATE_ENV_FILE` somewhere else to load a different
