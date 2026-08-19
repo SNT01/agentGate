@@ -1,0 +1,98 @@
+# AgentGate broker, ready to run.
+#
+#   echo "AGENTGATE_ADMIN_TOKEN=$(openssl rand -hex 32)" >> .env
+#   docker compose up -d
+#   docker compose exec agentgate node src/cli/cli.js doctor --broker
+#
+# Put the token in a `.env` file beside this one rather than exporting it:
+# compose reads that file on every subcommand, so `exec` and `logs` keep
+# working from any shell. (The broker reads `.env` too, but that is its own
+# copy inside the image — this one configures compose.)
+#
+# Everything below has a working default except that token, which has none on
+# purpose: without it the admin API and dashboard are disabled, and in
+# production the broker refuses to start at all.
+#
+# Enrollment runs *inside* the container, because the CLI works on the data
+# directory and the container's is the named volume below:
+#
+#   agentgate keygen                     # on your machine; keep the private key
+#   docker compose exec agentgate node src/cli/cli.js \
+#     enroll --name "Alice" --contexts office --public-key "MCowBQYDK2Vw..."
+#
+# The image sets NODE_ENV=production, which refuses to generate keypairs
+# server-side — hence --public-key. That is the point of production mode.
+
+services:
+  agentgate:
+    build:
+      context: .
+      args:
+        # Set to 1 to install @octokit/auth-app, which the GitHub credential
+        # exchange needs. Left at 0 the broker issues AgentGate session tokens
+        # only — fine for a trial, rejected by GitHub for a real `git push`.
+        WITH_GITHUB_APP: "${WITH_GITHUB_APP:-0}"
+    image: agentgate:1.0.0
+    container_name: agentgate
+    restart: unless-stopped
+
+    ports:
+      # Published on loopback only. Change to "4790:4790" to expose it, and
+      # terminate TLS in front of it when you do — token requests carry
+      # signatures and must not cross a network in clear.
+      - "127.0.0.1:${AGENTGATE_PUBLISH_PORT:-4790}:4790"
+
+    environment:
+      # Deliberately *not* a compose `:?` required-variable guard. Compose
+      # re-interpolates this file on every subcommand, so a hard requirement
+      # here breaks `docker compose exec`, `logs`, and even `down` from any
+      # shell that no longer exports the token — long after `up` succeeded.
+      # The broker already refuses to start in production without it, and says
+      # so plainly, which is the right layer for that error.
+      AGENTGATE_ADMIN_TOKEN: "${AGENTGATE_ADMIN_TOKEN:-}"
+      AGENTGATE_LOG_LEVEL: "${AGENTGATE_LOG_LEVEL:-info}"
+      AGENTGATE_TOKEN_TTL_MS: "${AGENTGATE_TOKEN_TTL_MS:-900000}"
+
+      # --- GitHub App (uncomment with WITH_GITHUB_APP=1) ---
+      # All four are required together: a half-configured exchange fails at the
+      # first push, long after the deploy that broke it. The private key is
+      # mounted below rather than passed as a variable — environment variables
+      # reach process listings and crash dumps far more readily than a 0600
+      # file.
+      # AGENTGATE_GITHUB_APP_ID: "${AGENTGATE_GITHUB_APP_ID}"
+      # AGENTGATE_GITHUB_INSTALLATION_ID: "${AGENTGATE_GITHUB_INSTALLATION_ID}"
+      # AGENTGATE_GITHUB_OWNER: "${AGENTGATE_GITHUB_OWNER}"
+      # AGENTGATE_GITHUB_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+
+    volumes:
+      # This volume holds the registry root key. Losing it invalidates every
+      # agent identity card ever issued — back it up.
+      - agentgate-data:/data
+
+      # Mount the GitHub App private key read-only, alongside the variables
+      # above. The path on the left is yours; the right must match
+      # AGENTGATE_GITHUB_PRIVATE_KEY_PATH.
+      # - ./github-app.pem:/run/secrets/github-app.pem:ro
+
+    # The image already defines a healthcheck that honours
+    # AGENTGATE_BROKER_PORT; declared here so `docker compose ps` reports it.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const p=process.env.AGENTGATE_BROKER_PORT||4790;require('http').get('http://127.0.0.1:'+p+'/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+    # The broker writes only to /data, which is the volume above.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  agentgate-data:

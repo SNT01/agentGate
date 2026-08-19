@@ -477,8 +477,23 @@ verification. Check `AGENTGATE_DATA_DIR` before doing anything else.
 ### Docker
 
 ```bash
+echo "AGENTGATE_ADMIN_TOKEN=$(openssl rand -hex 32)" >> .env
+docker compose up -d
+docker compose exec agentgate node src/cli/cli.js doctor --broker
+```
+
+The compose file publishes on loopback only, mounts a named volume for the
+state, runs with a read-only root filesystem, and carries commented-out lines
+for the GitHub App — including mounting the `.pem` rather than passing it as an
+environment variable. Keep the token in `.env` rather than exporting it:
+compose re-reads that file on every subcommand, so `exec` and `logs` keep
+working from any shell.
+
+Or without compose:
+
+```bash
 docker build -t agentgate .
-docker run -d --name agentgate -p 4790:4790 -v agentgate-data:/data \
+docker run -d --name agentgate -p 127.0.0.1:4790:4790 -v agentgate-data:/data \
   -e AGENTGATE_ADMIN_TOKEN="$(openssl rand -hex 32)" agentgate
 
 curl http://127.0.0.1:4790/health
