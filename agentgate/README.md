@@ -13,7 +13,7 @@ it compiles to static files the broker serves, and the broker still has
 nothing installed at runtime.
 
 ```bash
-npm test           # 173 tests
+npm test           # 184 tests
 npm run demo       # narrated end-to-end walkthrough
 npm run e2e:docker # deploy to local Docker and test the running service
 ```
@@ -226,6 +226,53 @@ must be proof against.
 
 `agentgate doctor` reports cards expiring within a week, and fails (rather than
 warns) once any of them has actually expired.
+
+### Profiles and per-repository ceilings
+
+`data/policies.json` (optional) holds two things: named capability presets, and
+the **repo policy** stage of the chain in §2 — which until recently had nowhere
+to live, so it applied to nothing.
+
+```json
+{
+  "profiles": {
+    "ci-agent":     { "branches": ["ci/*"], "actions": ["push"],
+                      "context": "ci", "cardTtlDays": 7 },
+    "review-agent": { "branches": ["feature/*", "agent/*"],
+                      "actions": ["push", "pr:open", "pr:comment"] }
+  },
+  "repositories": {
+    "acme/*":        { "actions": ["push", "pr:open", "pr:comment"] },
+    "acme/payments": { "branches": ["feature/*"], "actions": ["push"] }
+  }
+}
+```
+
+**Profiles** turn a card's capabilities into a decision made once:
+
+```bash
+node src/cli/cli.js issue-agent --sponsor human_e9ba... --tool claude-code --profile ci-agent
+```
+
+Explicit `--branches`/`--actions` still win, so a profile is a starting point.
+Naming the policy also makes it answerable: "what may a CI agent do here" is a
+line in a file rather than an audit of a hundred cards.
+
+**Repository ceilings** narrow every token issued for a repository, whatever
+the sponsor and card allow. Every matching pattern applies, intersected — so
+`acme/*` and `acme/payments` both constrain `acme/payments`, and adding a
+broader rule can never loosen a specific one. There is deliberately no
+precedence to reason about: more rules can only mean less authority. A field you
+omit imposes no restriction; a policy that cannot be read denies rather than
+granting an unbounded token.
+
+```bash
+node src/cli/cli.js policy                        # what is defined
+node src/cli/cli.js policy check acme/payments    # the ceiling here, resolved
+```
+
+This stage can only narrow, like every other. A ceiling naming `pr:merge` does
+not grant `pr:merge` to a card that lacks it.
 
 ---
 
@@ -626,10 +673,10 @@ GitHub ◄── Enforcer (GitHub App)
 | `src/registry/` | Identity registry: enrollment, agent cards, revocation |
 | `src/broker/` | Token broker, replay protection, posture checks, HTTP service, GitHub token exchange |
 | `src/enforcer/` | Commit verification, review gate, GitHub App wiring |
-| `src/shared/` | Crypto, capability algebra, audit chain, storage, config, logging |
+| `src/shared/` | Crypto, capability algebra, audit chain, storage, config, policies, logging |
 | `src/cli/` | `agentgate` CLI, the setup wizard (`init`), the diagnostic (`doctor`), client setup, and the git credential helper |
 | `ui/` | Admin dashboard (React/Vite, build-time deps only) — builds to `src/ui/dist`, served by the broker at `/ui` |
-| `test/` | 173 tests across all of the above |
+| `test/` | 184 tests across all of the above |
 
 ---
 

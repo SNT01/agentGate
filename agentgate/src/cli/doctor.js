@@ -205,6 +205,58 @@ function checkDataDir() {
 }
 
 /**
+ * The policy file, if there is one.
+ *
+ * A typo in a capability ceiling is not a crash — it is a restriction that
+ * quietly does not apply, which means a token broader than the operator
+ * believes they authorised. That deserves the same eager check as the rest of
+ * the configuration.
+ */
+function checkPolicies() {
+  const policyPath = path.join(config.dataDir, 'policies.json');
+  if (!fs.existsSync(policyPath)) {
+    return {
+      name: 'policies',
+      status: PASS,
+      detail: 'none configured (no profiles, no per-repository ceilings)',
+    };
+  }
+
+  let problems;
+  let data;
+  try {
+    const { PolicyStore } = require('../shared/policyStore');
+    const store = new PolicyStore(config.dataDir);
+    problems = store.validate();
+    data = store.load();
+  } catch (err) {
+    return {
+      name: 'policies',
+      status: FAIL,
+      detail: `${policyPath} could not be read: ${err.message}`,
+      fix: 'a broker that cannot read this file denies every scoped request — fix or remove it',
+    };
+  }
+
+  if (problems.length) {
+    return {
+      name: 'policies',
+      status: FAIL,
+      detail: problems.join('; '),
+      fix: `edit ${policyPath}, then re-check with: agentgate policy`,
+    };
+  }
+
+  const profiles = Object.keys(data.profiles).length;
+  const repositories = Object.keys(data.repositories).length;
+  return {
+    name: 'policies',
+    status: PASS,
+    detail: `${profiles} profile(s), ${repositories} repository ceiling(s)`,
+  };
+}
+
+/**
  * Agent cards about to expire.
  *
  * An expiring card is not a misconfiguration, but it becomes an outage on a
@@ -517,6 +569,7 @@ async function runChecks({ scope = 'all' } = {}) {
         checkConfigValues(),
         checkAdminToken(),
         checkDataDir(),
+        checkPolicies(),
         checkExpiringCards(),
       ],
     });

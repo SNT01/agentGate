@@ -27,10 +27,13 @@ Setup
       keypair is generated and the private key printed once.
 
   agentgate issue-agent --sponsor <humanId> --tool claude-code [--version 2.4.0]
-                        [--context office] [--branches "feature/*,agent/*"]
+                        [--profile <name>] [--context office]
+                        [--branches "feature/*,agent/*"]
                         [--actions "push,pr:open,pr:comment"]
       Issue an Agent Identity Card for an AI tool, sponsored by a human.
       The card's capabilities are narrowed to at most the sponsor's own.
+      --profile takes branches, actions, context, and TTL from a named
+      preset in policies.json; explicit flags still win.
 
   agentgate setup-client [--human <id>] [--key <base64>] [--agent <id>]
                         [--context office] [--broker-url URL]
@@ -55,6 +58,11 @@ Operations
   agentgate status <id>               Check one identity or agent card
   agentgate revoke <id> [--reason ".."]  Revoke; sponsors cascade to their agents
   agentgate audit [list|verify] [--limit N]   Inspect or verify the audit chain
+
+  agentgate policy [list] [--json]
+  agentgate policy check <owner/name>
+      Show the capability profiles and per-repository ceilings defined in
+      policies.json, or what the ceiling works out to for one repository.
 
 Diagnosis
   agentgate doctor [--broker|--client] [--json]
@@ -148,10 +156,33 @@ function cmdIssueAgent(registry, flags) {
   if (!flags.sponsor || flags.sponsor === true) throw new Error('--sponsor <humanId> is required');
   if (!flags.tool || flags.tool === true) throw new Error('--tool <name> is required (e.g. claude-code)');
 
+  // A profile supplies the defaults; explicit flags still win, so a profile is
+  // a starting point rather than a straitjacket. Spelling out --branches and
+  // --actions on every one of a hundred invocations is a hundred chances to
+  // type something subtly different.
+  const profileName = flags.profile === true ? null : flags.profile;
+  let profile = null;
+  if (profileName) {
+    const { PolicyStore } = require('../shared/policyStore');
+    const policies = new PolicyStore(config.dataDir);
+    profile = policies.profile(profileName);
+    if (!profile) {
+      const known = policies.profileNames();
+      throw new Error(
+        `Unknown profile "${profileName}".${known.length ? ` Known: ${known.join(', ')}` : ' No profiles are defined in policies.json.'}`
+      );
+    }
+  }
+
   const requestedCapabilities = {
-    branches: list(flags.branches, ['feature/*', 'agent/*']),
-    actions: list(flags.actions, ['push', 'pr:open', 'pr:comment']),
+    branches: list(flags.branches, (profile && profile.branches) || ['feature/*', 'agent/*']),
+    actions: list(flags.actions, (profile && profile.actions) || ['push', 'pr:open', 'pr:comment']),
   };
+  const context =
+    flags.context === true || !flags.context ? (profile && profile.context) || 'office' : flags.context;
+  const ttlMs =
+    profile && profile.cardTtlDays ? Number(profile.cardTtlDays) * 24 * 60 * 60 * 1000 : undefined;
+
   const result = registry.issueAgentCard({
     sponsorId: flags.sponsor,
     tool: {
@@ -160,13 +191,15 @@ function cmdIssueAgent(registry, flags) {
       packageHash: flags['package-hash'] === true ? null : flags['package-hash'] || null,
     },
     operator: flags.operator === true ? undefined : flags.operator,
-    context: flags.context === true ? 'office' : flags.context || 'office',
+    context,
     requestedCapabilities,
+    ttlMs,
     publicKey: flags['public-key'] === true ? undefined : flags['public-key'],
   });
   const { card } = result;
 
   console.log('Agent Identity Card issued.');
+  if (profileName) console.log(`  profile:      ${profileName}`);
   console.log(`  agentCardId:  ${result.agentCardId}`);
   console.log(`  tool:         ${card.tool.name}@${card.tool.version}`);
   console.log(`  sponsor:      ${card.sponsorId}`);
@@ -346,6 +379,73 @@ function cmdRevoke(registry, broker, positional, flags) {
   }
 }
 
+/**
+ * Show what policies.json defines, and what it means for a given repository.
+ *
+ * The second part is the useful one: `policy check acme/payments` answers "what
+ * is the ceiling here" without issuing a token to find out.
+ */
+function cmdPolicy(positional, flags) {
+  const { PolicyStore } = require('../shared/policyStore');
+  const policies = new PolicyStore(config.dataDir);
+  const sub = positional[0] || 'list';
+
+  const problems = policies.validate();
+  if (problems.length) {
+    console.error('policies.json has problems:');
+    for (const p of problems) console.error(`  - ${p}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (sub === 'check') {
+    const repository = positional[1];
+    if (!repository) throw new Error('usage: agentgate policy check <owner/name>');
+    const policy = policies.repositoryPolicy(repository);
+    if (flags.json) {
+      console.log(JSON.stringify({ repository, policy }, null, 2));
+      return;
+    }
+    if (!policy) {
+      console.log(`\nNo repository policy matches ${repository}.`);
+      console.log('  The ceiling is whatever the sponsor and agent card allow.\n');
+      return;
+    }
+    console.log(`\nCeiling for ${repository} (intersection of every matching rule):`);
+    if (policy.branches) console.log(`  branches: ${policy.branches.join(', ')}`);
+    if (policy.actions) console.log(`  actions:  ${policy.actions.join(', ')}`);
+    console.log('\n  An issued token is narrowed to at most this, whatever the card allows.\n');
+    return;
+  }
+
+  const data = policies.load();
+  if (flags.json) {
+    console.log(JSON.stringify(data, null, 2));
+    return;
+  }
+
+  const profiles = Object.entries(data.profiles);
+  console.log(`\nProfiles (${profiles.length}):`);
+  for (const [name, p] of profiles) {
+    const ttl = p.cardTtlDays ? `  ttl=${p.cardTtlDays}d` : '';
+    console.log(`  ${name}  branches=[${p.branches}] actions=[${p.actions}] context=${p.context || 'office'}${ttl}`);
+  }
+  if (!profiles.length) console.log('  (none — issue-agent uses its built-in defaults)');
+
+  const repositories = Object.entries(data.repositories);
+  console.log(`\nRepository ceilings (${repositories.length}):`);
+  for (const [pattern, policy] of repositories) {
+    const parts = [];
+    if (policy.branches) parts.push(`branches=[${policy.branches}]`);
+    if (policy.actions) parts.push(`actions=[${policy.actions}]`);
+    console.log(`  ${pattern}  ${parts.join(' ') || '(no restriction)'}`);
+  }
+  if (!repositories.length) {
+    console.log('  (none — no per-repository ceiling is applied)');
+  }
+  console.log(`\n  File: ${require('path').join(config.dataDir, 'policies.json')}\n`);
+}
+
 function cmdAudit(broker, positional, flags) {
   const sub = positional[0] || 'list';
   if (sub === 'verify') {
@@ -410,6 +510,8 @@ function main() {
       return cmdStatus(registry, positional);
     case 'revoke':
       return cmdRevoke(registry, withBroker(), positional, flags);
+    case 'policy':
+      return cmdPolicy(positional, flags);
     case 'audit':
       return cmdAudit(withBroker(), positional, flags);
     default:
