@@ -53,6 +53,14 @@ done
 [ "$status" = "healthy" ] || { echo "    FAIL: container never became healthy"; docker logs "$CONTAINER"; exit 1; }
 echo "    healthy, listening on ${URL}"
 
+echo "==> Checking the deployment with agentgate doctor"
+# Runs inside the container, which is where the configuration and data
+# directory actually are. Non-zero exit means a real failure, not a warning,
+# so this doubles as a smoke test of the container's own configuration.
+docker exec -e AGENTGATE_ADMIN_TOKEN="$ADMIN_TOKEN" "$CONTAINER" \
+  node src/cli/cli.js doctor --broker
+echo "    doctor reports no failures"
+
 echo "==> Enrolling a human (keypair generated client-side)"
 HUMAN_KEYS=$(node src/cli/cli.js keygen --json)
 HUMAN_PUB=$(echo "$HUMAN_KEYS" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).publicKey))")

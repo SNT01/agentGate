@@ -186,7 +186,7 @@ function createServer(broker = new TokenBroker()) {
 }
 
 function start() {
-  const { assertProductionSafe } = require('../shared/config');
+  const { assertProductionSafe, validateConfig } = require('../shared/config');
   if (config.isProduction) {
     try {
       assertProductionSafe();
@@ -196,10 +196,36 @@ function start() {
       process.stderr.write(`\n${err.message}\n\nRefusing to start.\n\n`);
       process.exit(1);
     }
+  } else {
+    // Development still refuses to start on a value that cannot be parsed —
+    // the alternative is an opaque 500 from whichever request first reads it.
+    // The production-only *policy* checks stay production-only.
+    const problems = validateConfig();
+    if (problems.length) {
+      process.stderr.write(
+        `\nInvalid configuration:\n  - ${problems.join('\n  - ')}\n\nRefusing to start.\n\n`
+      );
+      process.exit(1);
+    }
   }
 
   const broker = new TokenBroker();
   const server = createServer(broker);
+
+  // A generated root key on a data directory that also holds identities means
+  // the key file went missing; on an empty one it is a first run. Either way
+  // the operator needs to know before the first push fails verification.
+  if (broker.registry.rootKeyGenerated) {
+    const existing = broker.registry.listAgentCards().length;
+    log.warn('generated a new registry root key', {
+      dataDir: config.dataDir,
+      rootKeyFingerprint: broker.registry.rootKeyFingerprint,
+      detail:
+        existing > 0
+          ? `${existing} existing agent card(s) were signed by a different root key and will now FAIL verification — check AGENTGATE_DATA_DIR and restore registry-root-key.json`
+          : 'first run — back up this data directory, it is the root of trust',
+    });
+  }
 
   server.listen(config.port, config.host, () => {
     log.info('broker listening', {
@@ -207,6 +233,9 @@ function start() {
       port: config.port,
       env: config.env,
       tokenTtlMs: config.tokenTtlMs,
+      dataDir: config.dataDir,
+      rootKeyFingerprint: broker.registry.rootKeyFingerprint,
+      configFile: config.envFile.path || 'none (no .env found)',
       adminEndpoints: config.adminToken ? 'enabled' : 'disabled (AGENTGATE_ADMIN_TOKEN unset)',
       dashboard: config.uiEnabled ? `enabled at /ui (assets: ${config.uiAssetRoot})` : 'disabled',
     });

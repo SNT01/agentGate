@@ -19,7 +19,7 @@
  */
 const path = require('path');
 const { JsonStore } = require('../shared/store');
-const { generateKeyPair, sign, verify, randomId } = require('../shared/crypto');
+const { generateKeyPair, sign, verify, randomId, sha256 } = require('../shared/crypto');
 const { intersectCapabilities, isEmptyCapabilitySet } = require('../shared/capability');
 const { config } = require('../shared/config');
 
@@ -63,12 +63,28 @@ class Registry {
     if (!key) {
       key = generateKeyPair();
       this.rootKeyStore.save(key);
+      // A freshly generated root key is either a first run or a disaster: a
+      // typo in AGENTGATE_DATA_DIR points at an empty directory, a new root
+      // key is minted there, and every agent card signed by the real root
+      // fails verification. Both look identical from here, so record it and
+      // let the caller decide how loudly to say so.
+      this.rootKeyGenerated = true;
+    } else {
+      this.rootKeyGenerated = false;
     }
     this.rootKeyPair = key;
   }
 
   get rootPublicKey() {
     return this.rootKeyPair.publicKey;
+  }
+
+  /**
+   * Short fingerprint of the root public key, for operators comparing the key
+   * a broker booted with against the one they expect.
+   */
+  get rootKeyFingerprint() {
+    return sha256(this.rootKeyPair.publicKey).slice(0, 16);
   }
 
   /**
@@ -177,6 +193,84 @@ class Registry {
     return generated
       ? { agentCardId: id, card, privateKey: generated.privateKey }
       : { agentCardId: id, card };
+  }
+
+  /**
+   * Extend an existing Agent Identity Card's expiry, keeping its id.
+   *
+   * Cards expire so that a forgotten agent stops working rather than running
+   * forever. The only way to act on that expiry used to be `issue-agent`,
+   * which mints a *new* id — so every renewal orphaned the audit history and
+   * the commit trailers pointing at the old one. At a hundred agents on a
+   * 30-day TTL that is several identity changes a day, each one breaking the
+   * attribution the audit log exists to provide.
+   *
+   * Renewal is not a way to gain authority. The capability set is recomputed
+   * against the sponsor's *current* capabilities, so a sponsor who has been
+   * narrowed since issuance produces a narrower card — never a wider one. The
+   * card is re-signed because its expiry (a signed field) changed.
+   *
+   * @returns {{agentCardId: string, card: object, previousExpiresAt: string,
+   *            narrowed: boolean}}
+   */
+  renewAgentCard(cardId, { ttlMs } = {}) {
+    requireNonEmptyString(cardId, 'agentCardId');
+    const data = this.store.load();
+    const existing = data.agents[cardId];
+    if (!existing) throw new Error(`Unknown agent card: ${cardId}`);
+
+    // Revocation is permanent by design. Renewing a revoked card — or one whose
+    // sponsor is revoked — would resurrect authority that somebody deliberately
+    // withdrew, so both are refused rather than silently reactivated.
+    if (data.revoked[cardId]) throw new Error(`Agent card ${cardId} is revoked and cannot be renewed`);
+    const sponsor = data.humans[existing.sponsorId];
+    if (!sponsor) throw new Error(`Sponsor ${existing.sponsorId} no longer exists`);
+    if (data.revoked[existing.sponsorId]) {
+      throw new Error(`Sponsor ${existing.sponsorId} is revoked — renewing would restore authority that was withdrawn`);
+    }
+    if (!sponsor.allowedContexts.includes(existing.context) && !sponsor.allowedContexts.includes('*')) {
+      throw new Error(
+        `Sponsor is no longer permitted to act from context "${existing.context}" (allowed: ${sponsor.allowedContexts.join(', ')})`
+      );
+    }
+
+    const capabilities = intersectCapabilities(sponsor.capabilities, existing.capabilities);
+    if (isEmptyCapabilitySet(capabilities)) {
+      throw new Error(
+        "The sponsor's capabilities no longer overlap this card's — renewing it would grant nothing. Issue a new card instead."
+      );
+    }
+    const narrowed = JSON.stringify(capabilities) !== JSON.stringify(existing.capabilities);
+
+    const previousExpiresAt = existing.expiresAt;
+    const card = {
+      ...existing,
+      capabilities,
+      // `issuedAt` deliberately keeps its original value: it records when this
+      // identity came into existence, which renewal does not change.
+      renewedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + (ttlMs || config.agentCardTtlMs)).toISOString(),
+    };
+    delete card.signature; // never sign over a stale signature
+    card.signature = sign(card, this.rootKeyPair.privateKey);
+
+    data.agents[cardId] = card;
+    this.store.save(data);
+
+    return { agentCardId: cardId, card, previousExpiresAt, narrowed };
+  }
+
+  /**
+   * Cards expiring within `withinMs`, soonest first. Expired ones are included
+   * with a negative `expiresInMs`, because "already broken" and "about to
+   * break" are the same operational question.
+   */
+  listExpiringAgentCards(withinMs, now = Date.now()) {
+    return this.listAgentCards()
+      .filter((card) => !card.revoked)
+      .map((card) => ({ ...card, expiresInMs: new Date(card.expiresAt).getTime() - now }))
+      .filter((card) => card.expiresInMs <= withinMs)
+      .sort((a, b) => a.expiresInMs - b.expiresInMs);
   }
 
   getHuman(id) {

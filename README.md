@@ -15,8 +15,17 @@ that cannot be quietly edited.
 ```bash
 cd agentgate
 npm run demo       # narrated end-to-end walkthrough — no install needed
-npm test           # 96 tests
+npm test           # 184 tests
 npm run e2e:docker # deploy to local Docker and test the running service
+```
+
+Setting it up for real is two commands — `init` writes a validated `.env`
+(generated admin token and all), and `doctor` checks the result end to end and
+names the fix for anything wrong:
+
+```bash
+node src/cli/cli.js init
+node src/cli/cli.js doctor
 ```
 
 - **[agentgate/README.md](./agentgate/README.md)** — how to install, use the
@@ -72,13 +81,24 @@ that changes are checked against. Participation is governed by our
 
 Known gaps, tracked openly and open to contribution:
 
+- **Remote provisioning** — the CLI works on the broker's data directory, so
+  enrolling and issuing cards means being on that machine (or `docker exec`).
+  An authenticated provisioning API, guarded separately from the dashboard
+  token, is the next step; it is what would make issuing hundreds of agent
+  cards a scripted operation rather than a shell session.
 - **Live GitHub App wiring** — the enforcer logic is complete and tested,
   but connecting it to a real repository still requires registering an App.
-- **Multi-instance deployment** — state is JSON files today; Postgres and
-  Redis backends are single-file swaps by design.
+- **Commit trailers** — the enforcer verifies `Agent-ID`/`Sponsor` trailers,
+  but nothing yet writes them outside the demo, so the `agentgate/verified`
+  check cannot pass on a real repository until a signing step exists.
+- **Multi-instance deployment** — state is JSON files today, with no locking
+  around read-modify-write. Correct for one broker; a second instance needs
+  Postgres behind `src/shared/store.js` and Redis behind the nonce store,
+  both deliberately single-method interfaces.
 - **Dashboard scope** — the admin dashboard covers read-only views plus
   revocation; enrollment and agent-card issuance remain CLI-only by design
-  (a stolen dashboard session should never be able to grant authority).
+  (a stolen dashboard session should never be able to grant authority). Its
+  views are also unpaginated, which will not hold at a few hundred agents.
 
 ## License
 

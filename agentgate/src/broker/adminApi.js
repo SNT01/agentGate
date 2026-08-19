@@ -23,10 +23,24 @@ function listIdentities(registry) {
   };
 }
 
-/** Live (unexpired) sessions, with credential material stripped. */
-function listSessions(broker) {
+/**
+ * Live (unexpired) sessions, with credential material stripped.
+ *
+ * The expiry filter is applied here rather than relying on stored state:
+ * sessions are pruned opportunistically on write, so a quiet broker keeps
+ * expired rows on disk indefinitely. Without this the dashboard reported
+ * long-dead sessions as live, which is the one thing an operator watching
+ * this table must be able to trust.
+ */
+function listSessions(broker, now = Date.now()) {
   const sessions = broker.sessions.load();
-  return { sessions: Object.values(sessions).map(log.redact) };
+  const live = Object.values(sessions).filter((session) => {
+    const expiresAt = new Date(session.expiresAt).getTime();
+    // An unparseable expiry is shown rather than hidden: a session we cannot
+    // reason about is exactly what an operator needs to see.
+    return !Number.isFinite(expiresAt) || expiresAt > now;
+  });
+  return { sessions: live.map(log.redact) };
 }
 
 /**

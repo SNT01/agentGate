@@ -12,7 +12,15 @@ const { config } = require('./config');
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
 
 function threshold() {
-  return LEVELS[config.logLevel] || LEVELS.info;
+  // `config.logLevel` now rejects a value it cannot recognise, and startup
+  // refuses to boot on one. Logging is the wrong place to re-litigate that:
+  // if this is reached with a bad value (a library consumer that skipped the
+  // startup check), log everything rather than nothing.
+  try {
+    return LEVELS[config.logLevel];
+  } catch (_err) {
+    return LEVELS.debug;
+  }
 }
 
 const SECRET_KEYS = new Set([

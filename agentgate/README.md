@@ -13,7 +13,7 @@ it compiles to static files the broker serves, and the broker still has
 nothing installed at runtime.
 
 ```bash
-npm test           # 96 tests
+npm test           # 184 tests
 npm run demo       # narrated end-to-end walkthrough
 npm run e2e:docker # deploy to local Docker and test the running service
 ```
@@ -56,6 +56,8 @@ because of how scope is computed, not because a policy file is correct.
 
 ## 3. Quick start
 
+See it work first, with nothing to install and nothing to configure:
+
 ```bash
 cd agentgate
 npm run demo
@@ -73,12 +75,65 @@ For the exhaustive assertions:
 npm test
 ```
 
+### Setting up for real
+
+Two commands, and neither asks you to assemble environment variables by hand:
+
+```bash
+node src/cli/cli.js init      # writes .env: generated admin token, bind
+                              # address, data directory, optional GitHub App
+npm run broker                # start it
+
+node src/cli/cli.js doctor    # verify the whole thing, end to end
+```
+
+`init` asks only the questions that have no safe answer, generates the admin
+token rather than making you invent one, validates every response before
+writing anything, and refuses to emit a half-configured GitHub App — the state
+that otherwise fails at the first push. `--yes` takes every default, for
+containers and CI.
+
+**`doctor` is where to start whenever something does not work.** It checks the
+things that otherwise fail silently and prints the command that fixes each one:
+
+```
+Client (this machine pushing code)
+----------------------------------
+  ✗ git credential helper: osxkeychain is consulted before AgentGate and will
+    answer first — pushes will never reach the broker (the symptom is an empty
+    audit log)
+      fix: git config --global --unset-all credential.helper && ...
+```
+
+It covers the configuration file and every value in it, the data directory and
+whether the root key that signed your agent cards is still there, whether the
+broker is reachable and accepts your admin token, whether the audit chain
+verifies, whether the dashboard is built, whether the GitHub App is whole, and
+on a developer's machine whether git will actually consult AgentGate. Exit
+status is non-zero only for real failures, so it works as a CI smoke test;
+`--json` reports the same checks as structured data.
+
 ---
 
 ## 4. Daily use
 
 The CLI is the only thing a person runs directly. After setup, `git push`
 works exactly as before.
+
+Every example below uses `node src/cli/cli.js`, which works from a clone with
+nothing installed. To get the shorter `agentgate` form on your `PATH`:
+
+```bash
+npm link          # from agentgate/, or `npm install -g .`
+agentgate help
+```
+
+**The CLI reads and writes the broker's data directory directly.** It is an
+administrator's tool, run where the state lives — the same machine, or
+`docker exec` for a containerised broker. Running it on your laptop against a
+broker in a container silently creates a *second*, empty registry, and every
+push is then denied with `unknown human`. (A remote provisioning API is the
+next planned step; until then, mind which filesystem you are on.)
 
 ### Enroll yourself (once)
 
@@ -94,8 +149,20 @@ Human enrolled.
   private key:  MC4CAQAwBQYDK2VwBCIEIIg...
 ```
 
-Store the private key in your OS keychain and export it for the credential
-helper (the command prints these lines for you):
+Then, on the machine you push from — one command, which the output above
+prints for you ready to paste:
+
+```bash
+agentgate setup-client --human human_e9ba335781b9cf36 --key "MC4CAQAwBQYDK2VwBCIEIIg..."
+```
+
+That stores the identity in `~/.config/agentgate/credentials.json` at mode
+`0600`, puts the credential helper first in git's chain, and sets
+`credential.useHttpPath`. Nothing goes in your shell profile, so the key is not
+in a file that gets backed up, synced, and read by every process you start.
+
+Environment variables still work and still take precedence, which is what CI
+and containerised agents should use:
 
 ```bash
 export AGENTGATE_HUMAN_ID=human_e9ba335781b9cf36
@@ -130,6 +197,82 @@ node src/cli/cli.js audit list --limit 20
 
 Revoking a person immediately invalidates every agent card they sponsor —
 no need to hunt down their agents individually.
+
+### Managing more than a handful of agents
+
+Agent cards expire (30 days by default) so a forgotten agent stops working
+rather than running indefinitely. That is the right default and it scales into
+a chore: a hundred agents on a 30-day TTL is a few expiries every day, and
+nothing announces them.
+
+```bash
+node src/cli/cli.js list agents --expiring 7      # what breaks this week, soonest first
+node src/cli/cli.js renew <agentCardId>          # extend it, keeping the id
+node src/cli/cli.js list agents --tool claude-code --status active
+node src/cli/cli.js list agents --sponsor human_e9ba... --json
+```
+
+**Renewal keeps the card's id**, which matters more than it sounds: the audit
+history and the `Agent-ID` trailers on every commit that agent has authored
+refer to that id. Reissuing instead mints a new identity and silently detaches
+all of it.
+
+Renewing is not a way to gain authority. The capability set is recomputed as
+`sponsor ∩ card`, so a sponsor who has been narrowed since issuance yields a
+narrower card, never a wider one, and the command says so when it happens. A
+revoked card — or one whose sponsor is revoked — cannot be renewed at all;
+restoring authority somebody deliberately withdrew is the one thing revocation
+must be proof against.
+
+`agentgate doctor` reports cards expiring within a week, and fails (rather than
+warns) once any of them has actually expired.
+
+### Profiles and per-repository ceilings
+
+`data/policies.json` (optional) holds two things: named capability presets, and
+the **repo policy** stage of the chain in §2 — which until recently had nowhere
+to live, so it applied to nothing.
+
+```json
+{
+  "profiles": {
+    "ci-agent":     { "branches": ["ci/*"], "actions": ["push"],
+                      "context": "ci", "cardTtlDays": 7 },
+    "review-agent": { "branches": ["feature/*", "agent/*"],
+                      "actions": ["push", "pr:open", "pr:comment"] }
+  },
+  "repositories": {
+    "acme/*":        { "actions": ["push", "pr:open", "pr:comment"] },
+    "acme/payments": { "branches": ["feature/*"], "actions": ["push"] }
+  }
+}
+```
+
+**Profiles** turn a card's capabilities into a decision made once:
+
+```bash
+node src/cli/cli.js issue-agent --sponsor human_e9ba... --tool claude-code --profile ci-agent
+```
+
+Explicit `--branches`/`--actions` still win, so a profile is a starting point.
+Naming the policy also makes it answerable: "what may a CI agent do here" is a
+line in a file rather than an audit of a hundred cards.
+
+**Repository ceilings** narrow every token issued for a repository, whatever
+the sponsor and card allow. Every matching pattern applies, intersected — so
+`acme/*` and `acme/payments` both constrain `acme/payments`, and adding a
+broader rule can never loosen a specific one. There is deliberately no
+precedence to reason about: more rules can only mean less authority. A field you
+omit imposes no restriction; a policy that cannot be read denies rather than
+granting an unbounded token.
+
+```bash
+node src/cli/cli.js policy                        # what is defined
+node src/cli/cli.js policy check acme/payments    # the ceiling here, resolved
+```
+
+This stage can only narrow, like every other. A ceiling naming `pr:merge` does
+not grant `pr:merge` to a card that lacks it.
 
 ---
 
@@ -200,29 +343,45 @@ image (§10).
 ### Make it invisible: the git credential helper
 
 ```bash
+agentgate setup-client         # add --human/--key to store an identity too
+agentgate doctor --client      # confirm git will actually consult AgentGate
+```
+
+From then on `git push` transparently fetches a fresh scoped credential.
+Nothing else in the developer's workflow changes, and no token is ever
+written to disk. `--dry-run` prints the commands it would run; `--local`
+configures one repository instead of the whole machine.
+
+The two settings it writes, and why each is not optional:
+
+```bash
 git config --global credential.useHttpPath true
 git config --global credential.helper \
   '!node /absolute/path/to/agentgate/src/cli/credentialHelper.js'
 ```
 
-From then on `git push` transparently fetches a fresh scoped credential.
-Nothing else in the developer's workflow changes, and no token is ever
-written to disk.
+`useHttpPath` is what makes git tell the helper *which repository* the
+credential is for; without it the broker cannot scope the minted token to one
+repository, and it denies rather than issue something broader. In CI, where
+there may be no global git config, set `AGENTGATE_REPOSITORY=owner/name`
+instead.
 
-`useHttpPath` is not optional. It is what makes git tell the helper *which
-repository* the credential is for; without it the broker cannot scope the
-minted token to one repository, and it denies rather than issue something
-broader. In CI, where there may be no global git config, set
-`AGENTGATE_REPOSITORY=owner/name` instead.
-
-**On macOS**, the Command Line Tools gitconfig registers `osxkeychain` as a
+**On macOS there is a third thing**, and it is the one that wastes an
+afternoon. The Command Line Tools gitconfig registers `osxkeychain` as a
 credential helper. Git accumulates helpers across config scopes and stops at
-the first that answers, so a cached GitHub credential will satisfy every push
-without AgentGate ever being consulted — the symptom is an empty audit log.
-Clear the cached credential and prefix the helper list with an empty reset:
+the first that answers, so a cached GitHub credential satisfies every push
+without AgentGate ever being consulted — and the symptom is an *empty audit
+log*, which looks like AgentGate doing nothing rather than a misconfiguration.
+
+`setup-client` handles the helper ordering (the empty first entry below is what
+discards the inherited chain) and `doctor` detects it if anything puts it back.
+Clearing the cached credential is left to you, because it also signs other
+tools on the machine out of GitHub:
 
 ```bash
 printf 'protocol=https\nhost=github.com\n' | git credential-osxkeychain erase
+# or: agentgate setup-client --clear-keychain
+
 git config --global --unset-all credential.helper
 git config --global --add credential.helper ''      # reset the inherited chain
 git config --global --add credential.helper '!node /absolute/path/to/agentgate/src/cli/credentialHelper.js'
@@ -337,6 +496,9 @@ push returns 403 — an error that looks nothing like a credential problem.
 
 **Troubleshooting**
 
+Run `agentgate doctor` first — it detects most of the table below and prints
+the fix. The table is the reference for what it is telling you.
+
 | Symptom | Cause |
 |---|---|
 | `Invalid username or token` | the helper is not in git's chain — see the macOS note in §5 |
@@ -356,20 +518,58 @@ nothing else changes.
 
 ## 7. Configuration
 
-Copy `env.example.txt` and adjust. Every value has a safe default in
-development; production enforces the important ones at startup and refuses
-to boot otherwise:
+```bash
+node src/cli/cli.js init     # generates .env for you (recommended)
+cp env.example.txt .env      # or start from the annotated example
+```
+
+The broker loads `.env` at startup.
+
+Real environment variables override the file, so a container's `-e` flags win
+over `.env`. Point `AGENTGATE_ENV_FILE` somewhere else to load a different
+file. Every value has a safe default in development.
+
+**Nothing is guessed.** A value the broker cannot parse stops startup in every
+environment, with a message naming the variable — rather than surfacing later
+as an opaque 500 from whichever request first read it. Booleans accept
+`1/true/yes/on` or `0/false/no/off`; anything else is an error, because a typo
+in a security switch must never resolve to a default.
+
+Production additionally enforces, and refuses to boot otherwise:
 
 - `AGENTGATE_ADMIN_TOKEN` must be set and at least 32 characters.
 - `AGENTGATE_TOKEN_TTL_MS` may not exceed one hour.
-- Binding to `0.0.0.0` requires `AGENTGATE_ALLOW_PUBLIC_BIND=1` as explicit
-  confirmation that TLS is terminated in front.
+- Binding to `0.0.0.0` requires `AGENTGATE_ALLOW_PUBLIC_BIND=true` as explicit
+  confirmation that TLS is terminated in front. A false-ish value is a
+  refusal, not a confirmation.
+- Any one `AGENTGATE_GITHUB_*` variable requires all of them (§6).
+
+The startup log records which `.env` file was loaded, the data directory, and
+a fingerprint of the registry root key. If the broker had to *generate* a root
+key it says so, loudly — on a data directory that already holds agent cards
+that means the key file went missing and every existing card will now fail
+verification. Check `AGENTGATE_DATA_DIR` before doing anything else.
 
 ### Docker
 
 ```bash
+echo "AGENTGATE_ADMIN_TOKEN=$(openssl rand -hex 32)" >> .env
+docker compose up -d
+docker compose exec agentgate node src/cli/cli.js doctor --broker
+```
+
+The compose file publishes on loopback only, mounts a named volume for the
+state, runs with a read-only root filesystem, and carries commented-out lines
+for the GitHub App — including mounting the `.pem` rather than passing it as an
+environment variable. Keep the token in `.env` rather than exporting it:
+compose re-reads that file on every subcommand, so `exec` and `logs` keep
+working from any shell.
+
+Or without compose:
+
+```bash
 docker build -t agentgate .
-docker run -d --name agentgate -p 4790:4790 -v agentgate-data:/data \
+docker run -d --name agentgate -p 127.0.0.1:4790:4790 -v agentgate-data:/data \
   -e AGENTGATE_ADMIN_TOKEN="$(openssl rand -hex 32)" agentgate
 
 curl http://127.0.0.1:4790/health
@@ -378,6 +578,22 @@ curl http://127.0.0.1:4790/health
 The image runs as a non-root user, stores state mode `0600` on a mounted
 volume, and ships a healthcheck. Without a valid configuration it refuses to
 start rather than coming up in a weakened state.
+
+Two things about the image catch people out, both consequences of it setting
+`NODE_ENV=production`:
+
+- **Enrollment runs inside the container**, because the CLI works on the data
+  directory and the container's is `/data` on the mounted volume:
+
+  ```bash
+  agentgate keygen                       # on your machine, keep the private key
+  docker exec agentgate node src/cli/cli.js \
+    enroll --name "Alice" --contexts office --public-key "MCowBQYDK2Vw..."
+  ```
+
+- **It will not generate keypairs for you** — `enroll` and `issue-agent`
+  require `--public-key` (see "Enrolling in production" below). This is the
+  point of production mode, not a limitation to work around.
 
 To deploy and verify the whole thing in one command:
 
@@ -457,10 +673,10 @@ GitHub ◄── Enforcer (GitHub App)
 | `src/registry/` | Identity registry: enrollment, agent cards, revocation |
 | `src/broker/` | Token broker, replay protection, posture checks, HTTP service, GitHub token exchange |
 | `src/enforcer/` | Commit verification, review gate, GitHub App wiring |
-| `src/shared/` | Crypto, capability algebra, audit chain, storage, config, logging |
-| `src/cli/` | `agentgate` CLI and the git credential helper |
+| `src/shared/` | Crypto, capability algebra, audit chain, storage, config, policies, logging |
+| `src/cli/` | `agentgate` CLI, the setup wizard (`init`), the diagnostic (`doctor`), client setup, and the git credential helper |
 | `ui/` | Admin dashboard (React/Vite, build-time deps only) — builds to `src/ui/dist`, served by the broker at `/ui` |
-| `test/` | 96 tests across all of the above |
+| `test/` | 184 tests across all of the above |
 
 ---
 

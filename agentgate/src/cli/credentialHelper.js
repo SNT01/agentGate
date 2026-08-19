@@ -27,16 +27,55 @@
  *   AGENTGATE_HUMAN_ID, AGENTGATE_HUMAN_PRIVATE_KEY
  *   AGENTGATE_AGENT_CARD_ID, AGENTGATE_AGENT_PRIVATE_KEY   (when an AI agent is acting)
  *   AGENTGATE_CONTEXT        (default: office)
- *   AGENTGATE_BROKER_URL     (default: http://127.0.0.1:4790)
+ *   AGENTGATE_BROKER_URL     (default: derived from AGENTGATE_BROKER_HOST/PORT)
  *   AGENTGATE_REPOSITORY     (fallback for CI, where git config is not global)
  */
 const http = require('http');
 const https = require('https');
 const { sign, randomId } = require('../shared/crypto');
+const { config } = require('../shared/config');
+const { resolveIdentity } = require('./clientConfig');
 
-const DEFAULT_BROKER = 'http://127.0.0.1:4790';
 const REQUEST_TIMEOUT_MS = 10_000;
-const FORGE_HOSTS = /(^|\.)(github\.com|githubusercontent\.com)$/i;
+const PUBLIC_FORGE_HOSTS = /(^|\.)(github\.com|githubusercontent\.com)$/i;
+
+/**
+ * Where the broker listens, derived from the same config the broker itself
+ * reads. This used to be a hardcoded literal, so changing
+ * AGENTGATE_BROKER_PORT moved the broker and left the helper calling the old
+ * one — a connection refused with nothing to connect it to the change.
+ *
+ * A wildcard bind is not an address a client can dial, so it resolves to
+ * loopback.
+ */
+function defaultBrokerUrl() {
+  const host = config.host === '0.0.0.0' || config.host === '::' ? '127.0.0.1' : config.host;
+  return `http://${host}:${config.port}`;
+}
+
+/**
+ * Is this host a forge whose credentials AgentGate is expected to mint?
+ *
+ * github.com and its asset domains always are. A GitHub Enterprise Server
+ * host is one too, but only the operator knows its name — it arrives via
+ * AGENTGATE_GITHUB_API_BASE_URL. Without this, a GHES push fell through the
+ * "not a forge" branch and exited silently, so the operator saw GitHub's
+ * opaque `Invalid username or token` instead of the message naming the
+ * missing configuration.
+ */
+function isForgeHost(host) {
+  if (!host) return false;
+  if (PUBLIC_FORGE_HOSTS.test(host)) return true;
+
+  const baseUrl = config.githubApiBaseUrl;
+  if (!baseUrl) return false;
+  try {
+    const enterpriseHost = new URL(baseUrl).hostname;
+    return host.toLowerCase() === enterpriseHost.toLowerCase();
+  } catch (_err) {
+    return false; // an unparseable base URL is reported by `agentgate doctor`
+  }
+}
 
 /**
  * Parse git's credential protocol: `key=value` lines, terminated by a blank
@@ -154,11 +193,14 @@ function assertBrokerTransportSafe(brokerUrl) {
  * @param {{repository?: string, host?: string, protocol?: string}} [context]
  */
 async function requestToken(context = {}) {
-  const humanId = process.env.AGENTGATE_HUMAN_ID;
-  const humanPrivateKey = process.env.AGENTGATE_HUMAN_PRIVATE_KEY;
+  // Environment variables first, then ~/.config/agentgate/credentials.json —
+  // so nothing that works today changes, and a developer no longer has to
+  // paste a private key into a shell profile. See clientConfig.js.
+  const identity = resolveIdentity();
+  const { humanId, humanPrivateKey } = identity;
   if (!humanId || !humanPrivateKey) {
     throw new Error(
-      'AGENTGATE_HUMAN_ID / AGENTGATE_HUMAN_PRIVATE_KEY are not set — run `agentgate enroll` and export the values it prints'
+      'no AgentGate identity found — run `agentgate setup-client` (or export AGENTGATE_HUMAN_ID and AGENTGATE_HUMAN_PRIVATE_KEY)'
     );
   }
 
@@ -168,7 +210,7 @@ async function requestToken(context = {}) {
   const timestamp = Date.now();
   const humanSignature = sign({ humanId, nonce, timestamp }, humanPrivateKey);
 
-  const brokerUrl = (process.env.AGENTGATE_BROKER_URL || DEFAULT_BROKER).replace(/\/$/, '');
+  const brokerUrl = (identity.brokerUrl || defaultBrokerUrl()).replace(/\/$/, '');
   assertBrokerTransportSafe(brokerUrl);
 
   return postJson(`${brokerUrl}/token`, {
@@ -176,8 +218,8 @@ async function requestToken(context = {}) {
     humanSignature,
     nonce,
     timestamp,
-    agentCardId: process.env.AGENTGATE_AGENT_CARD_ID || null,
-    context: process.env.AGENTGATE_CONTEXT || 'office',
+    agentCardId: identity.agentCardId || null,
+    context: identity.context,
     // Repository scoping: without this the broker cannot narrow the forge
     // token to one repository. AGENTGATE_REPOSITORY covers CI and agent
     // processes that have no global git config.
@@ -214,7 +256,7 @@ async function main() {
     // "Invalid username or token" error from the remote. Fail locally, where
     // we can name the actual cause.
     const host = input.host || '';
-    if (FORGE_HOSTS.test(host) || !host) {
+    if (isForgeHost(host) || !host) {
       process.stderr.write(
         'AgentGate: authorized, but no GitHub credential was minted.\n' +
           '  The broker has no GitHub App configured. Set AGENTGATE_GITHUB_APP_ID,\n' +
@@ -246,4 +288,11 @@ if (require.main === module) {
   });
 }
 
-module.exports = { requestToken, parseCredentialInput, parseRepository, readStdin };
+module.exports = {
+  requestToken,
+  parseCredentialInput,
+  parseRepository,
+  readStdin,
+  isForgeHost,
+  defaultBrokerUrl,
+};

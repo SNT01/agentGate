@@ -28,6 +28,7 @@ const { AuditChain } = require('../shared/auditChain');
 const { generateKeyPair, randomId, sign, verify } = require('../shared/crypto');
 const { JsonStore } = require('../shared/store');
 const { mintInstallationToken, describeMintError } = require('./githubToken');
+const { PolicyStore } = require('../shared/policyStore');
 const { config } = require('../shared/config');
 const log = require('../shared/logger');
 
@@ -113,6 +114,29 @@ class TokenBroker {
     // configuration at call time", which keeps a rotated App configuration
     // from requiring a broker restart.
     this.mintForgeToken = options.mintForgeToken || null;
+    // Per-repository capability ceilings. Injectable for the same reason.
+    this.policies = options.policyStore || new PolicyStore(dataDir);
+  }
+
+  /**
+   * The operator-configured ceiling for this repository, or null.
+   *
+   * Read on every request rather than cached: editing policies.json is how an
+   * operator tightens a repository, and that should take effect on the next
+   * push, not the next restart. A malformed file denies rather than silently
+   * imposing no ceiling — the whole point of this stage is that it constrains.
+   */
+  _repositoryPolicy(repository) {
+    if (!repository) return null;
+    try {
+      return this.policies.repositoryPolicy(repository);
+    } catch (err) {
+      // Surface as an empty capability set, which `requestToken` turns into a
+      // denial naming the intersection. Failing open here would grant more than
+      // the operator wrote down.
+      log.error('repository policy unreadable — denying', { repository, error: err.message });
+      return { branches: [], actions: [] };
+    }
   }
 
   get publicKey() {
@@ -129,7 +153,9 @@ class TokenBroker {
    * @param {number} req.timestamp        client clock, ms since epoch
    * @param {string} [req.agentCardId]    present when an AI agent is acting
    * @param {string} req.context          declared context, e.g. 'office'
-   * @param {object} [req.repoPolicy]     repo-level capability ceiling
+   * @param {string} [req.repository]     "owner/name", selects the configured
+   *                                      repository ceiling from policies.json
+   * @param {object} [req.repoPolicy]     an additional caller-supplied ceiling
    * @returns {{granted: true, token: object} | {granted: false, reason: string}}
    */
   requestToken(req) {
@@ -173,8 +199,18 @@ class TokenBroker {
     if (!posture.allowed) return this._deny({ humanId, agentCardId, context }, `posture denied: ${posture.reason}`);
 
     // --- Stage 3: capability intersection ---
+    // Order follows the documented chain: sponsor → agent card → repo policy.
+    //
+    // The repo policy comes from the operator's own policies.json, looked up by
+    // the repository the credential is for. It used to arrive only in the
+    // request body, which nothing sent — a ceiling supplied by the caller is
+    // not a policy, and the stage was inert in every real deployment. A
+    // caller-supplied `repoPolicy` is still honoured *in addition*, since
+    // intersection can only narrow and a client asking for less is welcome to.
     const sets = [human.capabilities];
     if (agentCard) sets.push(agentCard.capabilities);
+    const configuredPolicy = this._repositoryPolicy(req.repository);
+    if (configuredPolicy) sets.push(configuredPolicy);
     if (repoPolicy) sets.push(repoPolicy);
     const scope = intersectCapabilities(...sets);
     if (isEmptyCapabilitySet(scope)) {
