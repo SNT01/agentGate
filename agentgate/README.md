@@ -741,8 +741,7 @@ Participation is governed by our [Code of Conduct](../CODE_OF_CONDUCT.md).
 
 ## 12. License
 
-Licensed under the [Apache License 2.0](../LICENSE). Copyright 2026
-Sachchida Nand Tiwari.
+Licensed under the [Apache License 2.0](../LICENSE). Copyright 2026.
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
